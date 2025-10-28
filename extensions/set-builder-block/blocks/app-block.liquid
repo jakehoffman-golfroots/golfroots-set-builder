@@ -1,0 +1,1142 @@
+{% schema %}
+{
+  "name": "Golf Set Builder",
+  "target": "section",
+  "settings": []
+}
+{% endschema %}
+
+<div id="golf-set-builder-app"></div>
+
+<style>
+  #golf-set-builder-app {
+    max-width: 1000px;
+    margin: 40px auto;
+    padding: 20px;
+  }
+</style>
+
+<script>
+  (function() {
+    const appRoot = document.getElementById('golf-set-builder-app');
+    
+    const styles = `
+      * { box-sizing: border-box; }
+      
+      .gsb-container { 
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        color: #1a1a1a;
+      }
+      
+      /* Typography */
+      .gsb-title { 
+        font-size: 36px; 
+        font-weight: 700; 
+        margin-bottom: 12px;
+        line-height: 1.2;
+        color: #000;
+        text-align: center;
+      }
+      
+      .gsb-subtitle { 
+        font-size: 18px; 
+        color: #666; 
+        margin-bottom: 40px;
+        line-height: 1.5;
+        text-align: center;
+      }
+      
+      .gsb-section-title {
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: #000;
+        letter-spacing: -0.02em;
+      }
+      
+      .gsb-required {
+        color: #ef4444;
+        margin-left: 4px;
+      }
+      
+      /* Buttons */
+      .gsb-btn { 
+        padding: 14px 28px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        position: relative;
+      }
+      
+      .gsb-btn:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      }
+      
+      .gsb-btn:active:not(:disabled) {
+        transform: translateY(0);
+      }
+      
+      .gsb-btn:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+      
+      .gsb-btn-primary { 
+        background: #000;
+        color: #fff;
+      }
+      
+      .gsb-btn-primary:hover:not(:disabled) {
+        background: #1a1a1a;
+      }
+      
+      .gsb-btn-secondary { 
+        background: #fff;
+        border: 2px solid #e5e5e5;
+        color: #000;
+      }
+      
+      .gsb-btn-secondary:hover:not(:disabled) {
+        border-color: #000;
+        background: #fafafa;
+      }
+      
+      .gsb-btn-text {
+        background: none;
+        border: none;
+        color: #666;
+        text-decoration: underline;
+        padding: 8px 16px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      
+      .gsb-btn-text:hover {
+        color: #000;
+        transform: none;
+        box-shadow: none;
+      }
+      
+      /* Loading spinner inside button */
+      .gsb-btn-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        margin-right: 8px;
+        vertical-align: middle;
+      }
+      
+      .gsb-btn-secondary .gsb-btn-spinner {
+        border: 2px solid rgba(0,0,0,0.2);
+        border-top-color: #000;
+      }
+      
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      
+      /* Selection Cards */
+      .gsb-selection-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-bottom: 24px;
+      }
+      
+      .gsb-selection-card {
+        position: relative;
+        padding: 16px 12px;
+        border: 2px solid #e5e5e5;
+        border-radius: 12px;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.2s ease;
+        background: #fff;
+      }
+      
+      .gsb-selection-card:hover {
+        border-color: #999;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+      
+      .gsb-selection-card.active {
+        border-color: #000;
+        background: #f9f9f9;
+        box-shadow: 0 0 0 1px #000;
+      }
+      
+      .gsb-selection-card input[type="radio"] {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      
+      .gsb-selection-label {
+        font-size: 15px;
+        font-weight: 600;
+        color: #1a1a1a;
+        display: block;
+        margin-bottom: 4px;
+      }
+      
+      .gsb-selection-sublabel {
+        font-size: 12px;
+        color: #666;
+        display: block;
+      }
+      
+      /* Budget Input */
+      .gsb-input-wrapper {
+        position: relative;
+        margin-bottom: 24px;
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      
+      .gsb-input { 
+        width: 100%;
+        padding: 16px 20px;
+        font-size: 18px;
+        border: 2px solid #e5e5e5;
+        border-radius: 12px;
+        transition: all 0.2s ease;
+        font-weight: 600;
+        text-align: center;
+      }
+      
+      .gsb-input:focus {
+        outline: none;
+        border-color: #000;
+        box-shadow: 0 0 0 3px rgba(0,0,0,0.1);
+      }
+      
+      .gsb-input-prefix {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 18px;
+        font-weight: 600;
+        color: #999;
+        pointer-events: none;
+        margin-left: -45px;
+      }
+      
+      .gsb-input.has-prefix {
+        padding-left: 36px;
+      }
+      
+      /* Brand Selection */
+      .gsb-brand-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 10px;
+        margin-bottom: 24px;
+      }
+      
+      .gsb-brand-card {
+        padding: 14px 8px;
+        border: 2px solid #e5e5e5;
+        border-radius: 12px;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.2s ease;
+        background: #fff;
+        font-weight: 600;
+        font-size: 14px;
+      }
+      
+      .gsb-brand-card:hover {
+        border-color: #999;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+      
+      .gsb-brand-card.active {
+        background: #000;
+        color: #fff;
+        border-color: #000;
+      }
+      
+      /* Product Cards */
+      .gsb-card { 
+        padding: 20px;
+        border: 1px solid #e5e5e5;
+        border-radius: 16px;
+        margin-bottom: 12px;
+        background: #fff;
+        transition: all 0.2s ease;
+      }
+      
+      .gsb-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      }
+      
+      .gsb-grid { 
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 20px;
+      }
+      
+      .gsb-selected-card { 
+        border: 2px solid #10b981;
+        background: #f0fdf4;
+        box-shadow: 0 0 0 1px #10b981;
+      }
+      
+      /* Badges */
+      .gsb-badge { 
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      
+      .gsb-badge-brand { 
+        background: #f3f4f6;
+        color: #1f2937;
+      }
+      
+      .gsb-badge-success { 
+        background: #10b981;
+        color: #fff;
+      }
+      
+      .gsb-badge-info { 
+        background: #3b82f6;
+        color: #fff;
+      }
+      
+      .gsb-badge-warning {
+        background: #f59e0b;
+        color: #fff;
+      }
+      
+      /* Utility */
+      .gsb-gap-20 { 
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+      
+      .gsb-gap-10 { 
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      
+      .gsb-text-center {
+        text-align: center;
+      }
+      
+      .gsb-hint {
+        font-size: 13px;
+        color: #666;
+        margin-top: 6px;
+        text-align: center;
+      }
+      
+      /* Loading Animation */
+      .gsb-loading-spinner {
+        width: 48px;
+        height: 48px;
+        border: 4px solid #e5e5e5;
+        border-top-color: #000;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 24px;
+      }
+      
+      /* Responsive */
+      @media (max-width: 768px) {
+        .gsb-title { font-size: 28px; }
+        .gsb-subtitle { font-size: 16px; }
+        .gsb-grid { grid-template-columns: 1fr; }
+        .gsb-selection-grid { grid-template-columns: repeat(2, 1fr); }
+        .gsb-brand-grid { grid-template-columns: repeat(3, 1fr); }
+      }
+      
+      img { 
+        max-width: 100%;
+        height: auto;
+        display: block;
+      }
+    `;
+
+    const styleSheet = document.createElement('style');
+    styleSheet.textContent = styles;
+    document.head.appendChild(styleSheet);
+
+    const state = {
+      step: 0,
+      categoryStep: 0,
+      showAllOptions: false,
+      isLoading: false,
+      isAddingToCart: false,
+      profile: {
+        handicap: '',
+        budget: 1000,
+        brandPreferences: [],
+        swingSpeed: 'moderate', // Default to moderate
+        flex: 'regular',
+        gender: 'male',
+        handedness: 'right'
+      },
+      recommendations: null,
+      selectedClubs: {}
+    };
+
+    const categories = [
+      { key: 'driver', label: 'Driver', icon: '🏌️' },
+      { key: 'woods', label: 'Woods', icon: '🌲' },
+      { key: 'hybrids', label: 'Hybrids', icon: '⚡' },
+      { key: 'irons', label: 'Irons', icon: '🎯' },
+      { key: 'wedges', label: 'Wedges', icon: '📐' },
+      { key: 'putter', label: 'Putter', icon: '⛳' }
+    ];
+
+    function scrollToBuilder() {
+      setTimeout(() => {
+        const builderElement = document.getElementById('golf-set-builder-app');
+        if (builderElement) {
+          let offsetTop = 0;
+          let element = builderElement;
+          
+          while(element) {
+            offsetTop += element.offsetTop;
+            element = element.offsetParent;
+          }
+          
+          const targetPosition = offsetTop - 100;
+          
+          window.scrollTo({
+            top: Math.max(0, targetPosition),
+            behavior: 'smooth'
+          });
+        }
+      }, 100);
+    }
+
+    function render() {
+      appRoot.innerHTML = `
+        <div class="gsb-container">
+          ${state.step === 0 ? renderQuestionnaire() : ''}
+          ${state.step === 1 ? renderLoading() : ''}
+          ${state.step === 2 ? renderCategorySelection() : ''}
+          ${state.step === 3 ? renderFinalReview() : ''}
+        </div>
+      `;
+      attachEventListeners();
+    }
+
+    function renderQuestionnaire() {
+      return `
+        <h1 class="gsb-title">Build Your Perfect Golf Set</h1>
+        <p class="gsb-subtitle">Answer a few questions and we'll match you with the perfect preowned clubs!</p>
+        
+        <div class="gsb-gap-20" style="max-width: 700px; margin: 0 auto;">
+          
+          <!-- Handicap -->
+          <div>
+            <div class="gsb-section-title" style="text-align: center;">What's your handicap?<span class="gsb-required">*</span></div>
+            <div class="gsb-selection-grid">
+              <label class="gsb-selection-card ${state.profile.handicap === '0-10' ? 'active' : ''}" data-handicap="0-10">
+                <input type="radio" name="handicap" value="0-10">
+                <span class="gsb-selection-label">0-10</span>
+                <span class="gsb-selection-sublabel">Low</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.handicap === '10-20' ? 'active' : ''}" data-handicap="10-20">
+                <input type="radio" name="handicap" value="10-20">
+                <span class="gsb-selection-label">10-20</span>
+                <span class="gsb-selection-sublabel">Mid</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.handicap === '20-30' ? 'active' : ''}" data-handicap="20-30">
+                <input type="radio" name="handicap" value="20-30">
+                <span class="gsb-selection-label">20-30</span>
+                <span class="gsb-selection-sublabel">High</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.handicap === '30+' ? 'active' : ''}" data-handicap="30+">
+                <input type="radio" name="handicap" value="30+">
+                <span class="gsb-selection-label">30+</span>
+                <span class="gsb-selection-sublabel">Beginner</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Budget -->
+          <div>
+            <div class="gsb-section-title" style="text-align: center;">Total Budget<span class="gsb-required">*</span></div>
+            <div class="gsb-input-wrapper">
+              <span class="gsb-input-prefix">$</span>
+              <input type="number" class="gsb-input has-prefix" id="budget" value="${state.profile.budget}" min="100" step="50">
+            </div>
+            <div class="gsb-hint">How much do you want to spend on your complete set?</div>
+          </div>
+
+          <!-- Handedness -->
+          <div>
+            <div class="gsb-section-title" style="text-align: center;">Handedness<span class="gsb-required">*</span></div>
+            <div class="gsb-selection-grid" style="grid-template-columns: repeat(2, 1fr); max-width: 400px; margin: 0 auto;">
+              <label class="gsb-selection-card ${state.profile.handedness === 'right' ? 'active' : ''}" data-handedness="right">
+                <input type="radio" name="handedness" value="right">
+                <span class="gsb-selection-label">Right</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.handedness === 'left' ? 'active' : ''}" data-handedness="left">
+                <input type="radio" name="handedness" value="left">
+                <span class="gsb-selection-label">Left</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Gender -->
+          <div>
+            <div class="gsb-section-title" style="text-align: center;">Gender</div>
+            <div class="gsb-selection-grid" style="grid-template-columns: repeat(3, 1fr); max-width: 500px; margin: 0 auto;">
+              <label class="gsb-selection-card ${state.profile.gender === 'male' ? 'active' : ''}" data-gender="male">
+                <input type="radio" name="gender" value="male">
+                <span class="gsb-selection-label">Men's</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.gender === 'female' ? 'active' : ''}" data-gender="female">
+                <input type="radio" name="gender" value="female">
+                <span class="gsb-selection-label">Women's</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.gender === 'unisex' ? 'active' : ''}" data-gender="unisex">
+                <input type="radio" name="gender" value="unisex">
+                <span class="gsb-selection-label">Either</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Swing Speed -->
+          <div>
+            <div class="gsb-section-title" style="text-align: center;">Swing Speed <span style="font-weight: 400; color: #999;">(Optional)</span></div>
+            <div class="gsb-selection-grid">
+              <label class="gsb-selection-card ${state.profile.swingSpeed === '' ? 'active' : ''}" data-swingspeed="">
+                <input type="radio" name="swingSpeed" value="">
+                <span class="gsb-selection-label">Not Sure</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.swingSpeed === 'slow' ? 'active' : ''}" data-swingspeed="slow">
+                <input type="radio" name="swingSpeed" value="slow">
+                <span class="gsb-selection-label">Slow</span>
+                <span class="gsb-selection-sublabel">< 85 mph</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.swingSpeed === 'moderate' ? 'active' : ''}" data-swingspeed="moderate">
+                <input type="radio" name="swingSpeed" value="moderate">
+                <span class="gsb-selection-label">Moderate</span>
+                <span class="gsb-selection-sublabel">85-95 mph</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.swingSpeed === 'fast' ? 'active' : ''}" data-swingspeed="fast">
+                <input type="radio" name="swingSpeed" value="fast">
+                <span class="gsb-selection-label">Fast</span>
+                <span class="gsb-selection-sublabel">> 95 mph</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Shaft Flex -->
+          <div>
+            <div class="gsb-section-title" style="text-align: center;">Shaft Flex <span style="font-weight: 400; color: #999;">(Optional)</span></div>
+            <div class="gsb-selection-grid" style="grid-template-columns: repeat(5, 1fr);">
+              <label class="gsb-selection-card ${state.profile.flex === '' ? 'active' : ''}" data-flex="">
+                <input type="radio" name="flex" value="">
+                <span class="gsb-selection-label">Not Sure</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.flex === 'senior' ? 'active' : ''}" data-flex="senior">
+                <input type="radio" name="flex" value="senior">
+                <span class="gsb-selection-label">Senior</span>
+                <span class="gsb-selection-sublabel">A</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.flex === 'regular' ? 'active' : ''}" data-flex="regular">
+                <input type="radio" name="flex" value="regular">
+                <span class="gsb-selection-label">Regular</span>
+                <span class="gsb-selection-sublabel">R</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.flex === 'stiff' ? 'active' : ''}" data-flex="stiff">
+                <input type="radio" name="flex" value="stiff">
+                <span class="gsb-selection-label">Stiff</span>
+                <span class="gsb-selection-sublabel">S</span>
+              </label>
+              <label class="gsb-selection-card ${state.profile.flex === 'extra-stiff' ? 'active' : ''}" data-flex="extra-stiff">
+                <input type="radio" name="flex" value="extra-stiff">
+                <span class="gsb-selection-label">X-Stiff</span>
+                <span class="gsb-selection-sublabel">X</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Brand Preferences -->
+          <div>
+            <div class="gsb-section-title" style="text-align: center;">Brand Preferences <span style="font-weight: 400; color: #999;">(Optional)</span></div>
+            <div class="gsb-brand-grid">
+              ${['Callaway', 'TaylorMade', 'Titleist', 'Ping', 'Mizuno', 'Cobra'].map(brand => `
+                <div class="gsb-brand-card ${state.profile.brandPreferences.includes(brand) ? 'active' : ''}" data-brand="${brand}">
+                  ${brand}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <button class="gsb-btn gsb-btn-primary" id="findClubs" style="width: 100%; max-width: 400px; margin: 0 auto; display: block; padding: 18px;" ${state.isLoading ? 'disabled' : ''}>
+            ${state.isLoading ? '<span class="gsb-btn-spinner"></span>Finding Your Clubs...' : 'Find My Perfect Clubs →'}
+          </button>
+        </div>
+      `;
+    }
+
+    function renderLoading() {
+      return `
+        <div class="gsb-text-center" style="padding: 80px 20px;">
+          <div class="gsb-loading-spinner"></div>
+          <h2 style="font-size: 24px; font-weight: 600; margin-bottom: 12px;">Finding Your Perfect Clubs</h2>
+          <p style="color: #666; font-size: 16px;">Analyzing your profile and matching with our inventory...</p>
+        </div>
+      `;
+    }
+
+    function renderCategorySelection() {
+      const currentCategory = categories[state.categoryStep];
+      const currentOptions = state.recommendations ? state.recommendations[currentCategory.key] || [] : [];
+      const currentSelection = state.selectedClubs[currentCategory.key];
+      const totalPrice = Object.values(state.selectedClubs).reduce((sum, club) => sum + (club?.price || 0), 0);
+      const clubCount = Object.keys(state.selectedClubs).length;
+
+      const visibleOptions = state.showAllOptions ? currentOptions : currentOptions.slice(0, 3);
+      const hasMoreOptions = currentOptions.length > 3;
+
+      // Build progress bar with CENTERED inline-block segments
+      const segmentWidth = 140;
+      const gap = 6;
+      
+      let progressBarHTML = '<div style="margin-bottom: 24px;">';
+      progressBarHTML += '<div style="text-align: center; white-space: nowrap; font-size: 0; margin-bottom: 12px;">';
+      
+      for (let i = 0; i < categories.length; i++) {
+        const cat = categories[i];
+        const isSelected = state.selectedClubs[cat.key] !== undefined && state.selectedClubs[cat.key] !== null;
+        const isCurrent = i === state.categoryStep && !isSelected;
+        
+        let bgColor = '#e5e5e5';
+        if (isSelected) {
+          bgColor = '#10b981';
+        } else if (isCurrent) {
+          bgColor = '#3b82f6';
+        }
+        
+        const marginRight = i < categories.length - 1 ? `${gap}px` : '0';
+        
+        progressBarHTML += `<div style="display: inline-block; width: ${segmentWidth}px; height: 14px; background-color: ${bgColor}; border-radius: 7px; margin-right: ${marginRight}; vertical-align: top;" title="${cat.label}${isSelected ? ' ✓' : ''}"></div>`;
+      }
+      
+      progressBarHTML += '</div>';
+      progressBarHTML += `<div style="display: flex; justify-content: space-between; font-size: 13px; color: #666; font-weight: 600;">`;
+      progressBarHTML += `<span style="display: flex; align-items: center; gap: 8px;"><span>${currentCategory.icon}</span><span>Step ${state.categoryStep + 1} of ${categories.length}: ${currentCategory.label}</span></span>`;
+      progressBarHTML += `<span><strong>${clubCount}</strong> selected • <strong>$${totalPrice.toFixed(0)}</strong> / $${state.profile.budget}</span>`;
+      progressBarHTML += `</div></div>`;
+
+      return `
+        <div>
+          ${progressBarHTML}
+
+          <h2 style="font-size: 28px; font-weight: 700; margin-bottom: 8px; text-align: center;">${currentCategory.label}</h2>
+          <p style="color: #666; font-size: 16px; margin-bottom: 28px; text-align: center;">Choose the best option for your game</p>
+
+          ${currentOptions.length === 0 ? `
+            <div class="gsb-card" style="text-align: center; padding: 40px 24px;">
+              <h3 style="font-size: 18px; margin-bottom: 12px;">No ${currentCategory.label} Available</h3>
+              <p style="color: #666; margin-bottom: 20px;">We don't have any ${currentCategory.label.toLowerCase()} matching your preferences right now.</p>
+              <div class="gsb-gap-10" style="justify-content: center;">
+                ${state.categoryStep > 0 ? '<button class="gsb-btn gsb-btn-secondary" id="prevCategory">← Back</button>' : ''}
+                <button class="gsb-btn gsb-btn-primary" id="nextCategory">Continue →</button>
+              </div>
+            </div>
+          ` : `
+            ${currentSelection ? `
+              <div class="gsb-card gsb-selected-card" style="margin-bottom: 20px;">
+                <div style="margin-bottom: 12px;">
+                  <span class="gsb-badge gsb-badge-success">✓ Your Selection</span>
+                </div>
+                <div class="gsb-grid">
+                  <img src="${currentSelection.image}" alt="${currentSelection.title}" style="width: 100%; height: 150px; object-fit: contain; border-radius: 8px;">
+                  <div>
+                    <h3 style="font-size: 19px; font-weight: 600; margin-bottom: 10px; line-height: 1.3;">${currentSelection.title}</h3>
+                    <div style="font-size: 24px; font-weight: 700; margin-bottom: 10px;">$${currentSelection.price.toFixed(2)}</div>
+                    <span class="gsb-badge gsb-badge-brand">${currentSelection.brand}</span>
+                    <p style="color: #666; font-size: 14px; margin-top: 10px; line-height: 1.5;">${currentSelection.matchReason}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <h3 style="font-size: 18px; font-weight: 600; margin-bottom: 16px; text-align: center;">Other Options</h3>
+            ` : `
+              <h3 style="font-size: 18px; font-weight: 600; margin-bottom: 16px; text-align: center;">Recommended Options</h3>
+            `}
+
+            ${visibleOptions.map((club, idx) => `
+              <div class="gsb-card ${currentSelection?.id === club.id ? 'gsb-selected-card' : ''}">
+                <div class="gsb-grid">
+                  <img src="${club.image}" alt="${club.title}" style="width: 100%; height: 140px; object-fit: contain; border-radius: 8px;">
+                  <div>
+                    <div style="margin-bottom: 6px;">
+                      ${idx === 0 && !currentSelection && club.score >= 60 ? '<span class="gsb-badge gsb-badge-info">Best Match</span>' : ''}
+                    </div>
+                    <h4 style="font-size: 17px; font-weight: 600; margin-bottom: 8px; line-height: 1.3;">${club.title}</h4>
+                    <div style="font-size: 22px; font-weight: 700; margin-bottom: 10px;">$${club.price.toFixed(2)}</div>
+                    <span class="gsb-badge gsb-badge-brand">${club.brand}</span>
+                    <p style="color: #666; font-size: 13px; margin: 10px 0 16px; line-height: 1.5;">${club.matchReason}</p>
+                    <button class="gsb-btn ${currentSelection?.id === club.id ? 'gsb-btn-primary' : 'gsb-btn-secondary'}" 
+                            data-select-club="${idx}" style="width: 100%; padding: 12px;">
+                      ${currentSelection?.id === club.id ? '✓ Selected' : 'Select This Club'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+
+            ${hasMoreOptions && !state.showAllOptions ? `
+              <div style="text-align: center; margin: 16px 0;">
+                <button class="gsb-btn gsb-btn-text" id="showMore">
+                  Show ${currentOptions.length - 3} More Options
+                </button>
+              </div>
+            ` : ''}
+
+            <div class="gsb-card" style="background: #fafafa; border: 2px dashed #e5e5e5; margin-top: 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div class="gsb-gap-10">
+                  ${state.categoryStep > 0 ? '<button class="gsb-btn gsb-btn-secondary" id="prevCategory">← Back</button>' : ''}
+                  <button class="gsb-btn gsb-btn-secondary" id="skipCategory">Skip</button>
+                </div>
+                <button class="gsb-btn gsb-btn-primary" id="nextCategory">
+                  ${currentSelection ? 'Continue →' : 'Skip & Continue →'}
+                </button>
+              </div>
+            </div>
+          `}
+        </div>
+      `;
+    }
+
+    function renderFinalReview() {
+      const totalPrice = Object.values(state.selectedClubs).reduce((sum, club) => sum + (club?.price || 0), 0);
+      const clubCount = Object.keys(state.selectedClubs).length;
+      const isUnderBudget = totalPrice <= state.profile.budget;
+
+      // Progress bar with CENTERED inline-block
+      const segmentWidth = 140;
+      const gap = 6;
+      
+      let progressHtml = '<div style="margin-bottom: 32px;">';
+      progressHtml += '<div style="text-align: center; white-space: nowrap; font-size: 0; margin-bottom: 12px;">';
+      
+      for (let i = 0; i < categories.length; i++) {
+        const cat = categories[i];
+        const isSelected = state.selectedClubs[cat.key] !== undefined && state.selectedClubs[cat.key] !== null;
+        const bgColor = isSelected ? '#10b981' : '#e5e5e5';
+        const marginRight = i < categories.length - 1 ? `${gap}px` : '0';
+        progressHtml += `<div style="display: inline-block; width: ${segmentWidth}px; height: 14px; background-color: ${bgColor}; border-radius: 7px; margin-right: ${marginRight}; vertical-align: top;" title="${cat.label}${isSelected ? ' ✓' : ''}"></div>`;
+      }
+      
+      progressHtml += '</div></div>';
+
+      return `
+        <div>
+          ${progressHtml}
+
+          <h2 style="font-size: 32px; font-weight: 700; margin-bottom: 28px; text-align: center;">Review Your Complete Set</h2>
+
+          <div class="gsb-card" style="background: ${isUnderBudget ? '#f0fdf4' : '#fef3f2'}; border-color: ${isUnderBudget ? '#10b981' : '#ef4444'}; max-width: 600px; margin: 0 auto 28px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 16px;">
+              <span style="font-size: 16px; font-weight: 600;">Total Price:</span>
+              <span style="font-size: 32px; font-weight: 700;">$${totalPrice.toFixed(2)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid ${isUnderBudget ? '#d1fae5' : '#fecaca'};">
+              <span style="color: #666;">Your Budget:</span>
+              <span style="font-weight: 600;">$${state.profile.budget}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 16px;">
+              <span style="color: #666;">Total Clubs:</span>
+              <span style="font-weight: 600;">${clubCount} ${clubCount === 1 ? 'club' : 'clubs'}</span>
+            </div>
+            ${isUnderBudget ? 
+              `<div class="gsb-badge gsb-badge-success" style="width: 100%; text-align: center; padding: 10px;">
+                ✓ Under Budget by $${(state.profile.budget - totalPrice).toFixed(2)}
+              </div>` :
+              `<div class="gsb-badge gsb-badge-warning" style="width: 100%; text-align: center; padding: 10px;">
+                Over Budget by $${(totalPrice - state.profile.budget).toFixed(2)}
+              </div>`
+            }
+          </div>
+
+          <h3 style="font-size: 22px; font-weight: 600; margin: 28px 0 16px; text-align: center;">Your Selected Clubs</h3>
+
+          ${clubCount === 0 ? `
+            <div class="gsb-card" style="text-align: center; padding: 40px 24px; max-width: 600px; margin: 0 auto;">
+              <p style="color: #666; font-size: 16px;">You haven't selected any clubs yet. Go back and select at least one club.</p>
+            </div>
+          ` : `
+            <div style="max-width: 800px; margin: 0 auto;">
+              ${Object.entries(state.selectedClubs).map(([category, club]) => `
+                <div class="gsb-card">
+                  <div style="display: grid; grid-template-columns: 130px 1fr; gap: 20px;">
+                    <img src="${club.image}" alt="${club.title}" style="width: 100%; height: 110px; object-fit: contain; border-radius: 8px;">
+                    <div>
+                      <div style="font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; font-weight: 600;">
+                        ${categories.find(c => c.key === category)?.label}
+                      </div>
+                      <h4 style="font-size: 16px; font-weight: 600; margin-bottom: 8px; line-height: 1.3;">${club.title}</h4>
+                      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-size: 20px; font-weight: 700;">$${club.price.toFixed(2)}</span>
+                        <span class="gsb-badge gsb-badge-brand">${club.brand}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+
+          <div class="gsb-card" style="background: #fafafa; border: 2px solid #e5e5e5; margin-top: 20px; max-width: 800px; margin-left: auto; margin-right: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+              <button class="gsb-btn gsb-btn-secondary" id="editSelections">← Edit</button>
+              <div class="gsb-gap-10">
+                <button class="gsb-btn gsb-btn-secondary" id="startOver">Start Over</button>
+                <button class="gsb-btn gsb-btn-primary" id="addToCart" ${clubCount === 0 || state.isAddingToCart ? 'disabled' : ''} style="${clubCount === 0 ? 'opacity: 0.5; cursor: not-allowed;' : ''}">
+                  ${state.isAddingToCart ? '<span class="gsb-btn-spinner"></span>Adding to Cart...' : `Add ${clubCount} to Cart`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function attachEventListeners() {
+      const findClubsBtn = document.getElementById('findClubs');
+      if (findClubsBtn) {
+        findClubsBtn.onclick = handleFindClubs;
+      }
+
+      document.querySelectorAll('[data-handicap]').forEach(card => {
+        card.onclick = () => {
+          state.profile.handicap = card.dataset.handicap;
+          render();
+        };
+      });
+
+      document.querySelectorAll('[data-swingspeed]').forEach(card => {
+        card.onclick = () => {
+          // Store the selected value (could be empty string for "Not Sure")
+          state.profile.swingSpeed = card.dataset.swingspeed;
+          render();
+        };
+      });
+
+      document.querySelectorAll('[data-flex]').forEach(card => {
+        card.onclick = () => {
+          state.profile.flex = card.dataset.flex;
+          render();
+        };
+      });
+
+      document.querySelectorAll('[data-handedness]').forEach(card => {
+        card.onclick = () => {
+          state.profile.handedness = card.dataset.handedness;
+          render();
+        };
+      });
+
+      document.querySelectorAll('[data-gender]').forEach(card => {
+        card.onclick = () => {
+          state.profile.gender = card.dataset.gender;
+          render();
+        };
+      });
+
+      const budgetInput = document.getElementById('budget');
+      if (budgetInput) {
+        budgetInput.oninput = (e) => {
+          state.profile.budget = parseInt(e.target.value) || 1000;
+        };
+      }
+
+      document.querySelectorAll('[data-brand]').forEach(card => {
+        card.onclick = () => {
+          const brand = card.dataset.brand;
+          if (state.profile.brandPreferences.includes(brand)) {
+            state.profile.brandPreferences = state.profile.brandPreferences.filter(b => b !== brand);
+          } else {
+            state.profile.brandPreferences.push(brand);
+          }
+          render();
+        };
+      });
+
+      const prevBtn = document.getElementById('prevCategory');
+      if (prevBtn) {
+        prevBtn.onclick = () => {
+          state.categoryStep--;
+          state.showAllOptions = false;
+          render();
+          scrollToBuilder();
+        };
+      }
+      
+      const nextBtn = document.getElementById('nextCategory');
+      if (nextBtn) {
+        nextBtn.onclick = () => {
+          if (state.categoryStep < categories.length - 1) {
+            state.categoryStep++;
+            state.showAllOptions = false;
+          } else {
+            state.step = 3;
+          }
+          render();
+          scrollToBuilder();
+        };
+      }
+      
+      const skipBtn = document.getElementById('skipCategory');
+      if (skipBtn) {
+        skipBtn.onclick = () => {
+          const currentCategory = categories[state.categoryStep].key;
+          delete state.selectedClubs[currentCategory];
+          if (state.categoryStep < categories.length - 1) {
+            state.categoryStep++;
+            state.showAllOptions = false;
+          } else {
+            state.step = 3;
+          }
+          render();
+          scrollToBuilder();
+        };
+      }
+
+      const showMoreBtn = document.getElementById('showMore');
+      if (showMoreBtn) {
+        showMoreBtn.onclick = () => {
+          state.showAllOptions = true;
+          render();
+        };
+      }
+
+      document.querySelectorAll('[data-select-club]').forEach(btn => {
+        btn.onclick = () => {
+          const idx = parseInt(btn.dataset.selectClub);
+          const currentCategory = categories[state.categoryStep].key;
+          const club = state.recommendations[currentCategory][idx];
+          
+          state.selectedClubs[currentCategory] = club;
+          
+          if (state.categoryStep < categories.length - 1) {
+            state.categoryStep++;
+            state.showAllOptions = false;
+          } else {
+            state.step = 3;
+          }
+          
+          render();
+          setTimeout(() => {
+            scrollToBuilder();
+          }, 50);
+        };
+      });
+
+      const editBtn = document.getElementById('editSelections');
+      if (editBtn) {
+        editBtn.onclick = () => {
+          state.step = 2;
+          state.categoryStep = 0;
+          state.showAllOptions = false;
+          render();
+          scrollToBuilder();
+        };
+      }
+
+      const startOverBtn = document.getElementById('startOver');
+      if (startOverBtn) {
+        startOverBtn.onclick = () => {
+          state.step = 0;
+          state.categoryStep = 0;
+          state.recommendations = null;
+          state.selectedClubs = {};
+          state.showAllOptions = false;
+          render();
+          scrollToBuilder();
+        };
+      }
+
+      const addToCartBtn = document.getElementById('addToCart');
+      if (addToCartBtn && !addToCartBtn.disabled) {
+        addToCartBtn.onclick = handleAddToCart;
+      }
+    }
+
+    async function handleFindClubs() {
+      if (!state.profile.handicap) {
+        alert('Please select your handicap');
+        return;
+      }
+
+      state.isLoading = true;
+      render(); // Re-render to show loading state
+
+      try {
+        const appUrl = 'https://toe-unless-during-nurses.trycloudflare.com';
+        
+        // Create a copy of the profile and convert empty swingSpeed to 'moderate' for backend
+        const profileForBackend = {
+          ...state.profile,
+          swingSpeed: state.profile.swingSpeed === '' ? 'moderate' : state.profile.swingSpeed
+        };
+        
+        const response = await fetch(`${appUrl}/api/public-recommendations`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(profileForBackend)
+        });
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        
+        state.recommendations = data.recommendations;
+        state.isLoading = false;
+        state.step = 2;
+        state.categoryStep = 0;
+        render();
+        
+        scrollToBuilder();
+        
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Error loading recommendations: ' + error.message);
+        state.isLoading = false;
+        state.step = 0;
+        render();
+      }
+    }
+
+    async function handleAddToCart() {
+      if (Object.keys(state.selectedClubs).length === 0) {
+        alert('Please select at least one club');
+        return;
+      }
+
+      state.isAddingToCart = true;
+      render(); // Re-render to show loading state
+
+      try {
+        const items = Object.values(state.selectedClubs).map(club => {
+          let variantId = club.variantId;
+          
+          if (typeof variantId === 'string') {
+            const parts = variantId.split('/');
+            variantId = parts[parts.length - 1];
+          }
+          
+          return {
+            id: variantId,
+            quantity: 1,
+            title: club.title
+          };
+        });
+
+        let successCount = 0;
+        let failedItems = [];
+        
+        for (const item of items) {
+          try {
+            const response = await fetch('/cart/add.js', {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify({ 
+                id: item.id,
+                quantity: item.quantity
+              })
+            });
+            
+            if (response.ok) {
+              successCount++;
+            } else {
+              const errorText = await response.text();
+              try {
+                const errorJson = JSON.parse(errorText);
+                failedItems.push({
+                  title: item.title,
+                  error: errorJson.message || errorJson.description || 'Unknown error'
+                });
+              } catch (e) {
+                failedItems.push({
+                  title: item.title,
+                  error: `Error ${response.status}`
+                });
+              }
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+          } catch (err) {
+            failedItems.push({
+              title: item.title,
+              error: err.message
+            });
+          }
+        }
+        
+        state.isAddingToCart = false;
+        
+        if (successCount > 0) {
+          let message = `✓ Successfully added ${successCount} club${successCount > 1 ? 's' : ''} to your cart!`;
+          
+          if (failedItems.length > 0) {
+            message += `\n\n⚠️ ${failedItems.length} item${failedItems.length > 1 ? 's were' : ' was'} unavailable:\n`;
+            failedItems.forEach(item => {
+              message += `\n• ${item.title}: ${item.error}`;
+            });
+          }
+          
+          alert(message);
+          window.location.href = '/cart';
+        } else {
+          let message = '❌ Could not add any items to cart.\n\n';
+          failedItems.forEach(item => {
+            message += `\n• ${item.title}: ${item.error}`;
+          });
+          alert(message);
+          render(); // Re-render to remove loading state
+        }
+        
+      } catch (error) {
+        console.error('Error:', error);
+        alert('Error adding to cart: ' + error.message);
+        state.isAddingToCart = false;
+        render();
+      }
+    }
+
+    render();
+  })();
+</script>
