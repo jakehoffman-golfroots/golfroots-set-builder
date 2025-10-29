@@ -31,7 +31,7 @@ export async function action({ request }) {
       handedness = 'right',
     } = body;
 
-    const shopDomain = 'golfroots-dev.myshopify.com';
+const shopDomain = process.env.SHOPIFY_SHOP_DOMAIN || 'golfroots.myshopify.com';
     
     // Try to get access token from database
     console.log('Attempting to get access token from database...');
