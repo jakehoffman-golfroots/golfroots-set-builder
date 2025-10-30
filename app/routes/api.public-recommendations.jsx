@@ -31,6 +31,7 @@ export async function action({ request }) {
       flex,
       gender,
       handedness = 'right',
+      height,
     } = body;
 
     console.log('Loading products from database...');
@@ -91,32 +92,22 @@ export async function action({ request }) {
 
     console.log(`📊 Category breakdown:`, breakdown);
 
-    console.log('\n=== BRAND DEBUG ===');
-const hybridBrands = products
-  .filter(p => p.tags.includes('Hybrids'))
-  .map(p => p.brand)
-  .filter((brand, index, self) => self.indexOf(brand) === index) // unique brands
-  .slice(0, 10);
-console.log('Hybrid brands in database:', hybridBrands);
-console.log('User selected brand:', brandPreferences);
-console.log('=== END BRAND DEBUG ===\n');
-
     const budgetAllocation = {
-      driver: budget * 0.25,
-      woods: budget * 0.10,
-      hybrids: budget * 0.05,
-      irons: budget * 0.35,
-      wedges: budget * 0.15,
-      putter: budget * 0.10,
+      driver: budget * 0.35,
+      woods: budget * 0.20,
+      hybrids: budget * 0.15,
+      irons: budget * 0.45,
+      wedges: budget * 0.25,
+      putter: budget * 0.20,
     };
 
     const recommendations = {
-      driver: findBestMatches(products, 'Drivers', { handicap, budget: budgetAllocation.driver, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
-      woods: findBestMatches(products, 'Woods', { handicap, budget: budgetAllocation.woods, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
-      hybrids: findBestMatches(products, 'Hybrids', { handicap, budget: budgetAllocation.hybrids, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
-      irons: findBestMatches(products, 'Iron Sets', { handicap, budget: budgetAllocation.irons, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
-      wedges: findBestMatches(products, 'Wedges', { handicap, budget: budgetAllocation.wedges, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
-      putter: findBestMatches(products, 'Putters', { handicap, budget: budgetAllocation.putter, brandPreferences, flex, gender, handedness },12),
+      driver: findBestMatches(products, 'Drivers', { handicap, budget: budgetAllocation.driver, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      woods: findBestMatches(products, 'Woods', { handicap, budget: budgetAllocation.woods, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      hybrids: findBestMatches(products, 'Hybrids', { handicap, budget: budgetAllocation.hybrids, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      irons: findBestMatches(products, 'Iron Sets', { handicap, budget: budgetAllocation.irons, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      wedges: findBestMatches(products, 'Wedges', { handicap, budget: budgetAllocation.wedges, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      putter: findBestMatches(products, 'Putters', { handicap, budget: budgetAllocation.putter, brandPreferences, flex, gender, handedness, height }, 12),
     };
 
     console.log('Successfully generated recommendations');
@@ -150,7 +141,65 @@ console.log('=== END BRAND DEBUG ===\n');
   }
 }
 
-function findBestMatches(products, categoryTag, profile, limit = 3) {
+// Height-to-length mappings
+function getAcceptableLengths(height, category) {
+  if (!height) return null; // No height filtering if not provided
+  
+  const heightInches = parseInt(height);
+  
+  if (category === 'Drivers') {
+    // 5'5" (65") and under to 5'9" (69")
+    if (heightInches <= 69) {
+      return ['44"', '44.25"', '44.5"', '44.75"', '45"'];
+    }
+    // 5'10" (70") to 6'2" (74")
+    else if (heightInches >= 70 && heightInches <= 74) {
+      return ['44.5"', '44.75"', '45"', '45.25"', '45.5"'];
+    }
+    // 6'3" (75") to 6'4" (76") and up
+    else if (heightInches >= 75) {
+      return ['45"', '45.25"', '45.5"', '45.75"', '46"'];
+    }
+  }
+  
+  if (category === 'Iron Sets') {
+    // 5'5" (65") and under to 5'9" (69")
+    if (heightInches <= 69) {
+      return ['-1"', '-0.75"', '-0.5"', '-0.25"', 'Standard', 'Standard Length'];
+    }
+    // 5'10" (70") to 6'2" (74")
+    else if (heightInches >= 70 && heightInches <= 74) {
+      return ['-0.5"', '-0.25"', 'Standard', 'Standard Length', '+0.25"', '+0.5"'];
+    }
+    // 6'3" (75") to 6'4" (76") and up
+    else if (heightInches >= 75) {
+      return ['Standard', 'Standard Length', '+0.25"', '+0.5"', '+0.75"', '+1"'];
+    }
+  }
+  
+  return null; // No height filtering for other categories
+}
+
+function checkLengthMatch(product, acceptableLengths) {
+  if (!acceptableLengths) return true; // No filtering needed
+  
+  // Check both title and tags for length indicators
+  const titleLower = product.title.toLowerCase();
+  const tagsLower = product.tags.map(t => t.toLowerCase());
+  const allText = [...tagsLower, titleLower].join(' ');
+  
+  // Check if any acceptable length is present
+  return acceptableLengths.some(length => {
+    const lengthLower = length.toLowerCase();
+    // Check for exact matches or variations (e.g., "44" matches "44\"" or "44 inch")
+    return allText.includes(lengthLower) || 
+           allText.includes(length) ||
+           allText.includes(length.replace('"', '')) ||
+           allText.includes(length.replace('"', ' inch'));
+  });
+}
+
+function findBestMatches(products, categoryTag, profile, limit = 12) {
   // ========================================================================
   // FILTERING PHASE - These filters ELIMINATE clubs entirely before scoring
   // Wrong gender or handedness = NEVER shown, regardless of other factors
@@ -178,22 +227,22 @@ function findBestMatches(products, categoryTag, profile, limit = 3) {
         tag.toLowerCase().includes('lefty') ||
         tag === 'handedness_left'
       );
- } else {
-  // For right-handed users (default), ONLY exclude if explicitly left-handed
-  const isExplicitlyLeftHanded = p.tags.some(tag => 
-    tag.toLowerCase().includes('left hand') ||
-    tag.toLowerCase().includes('left-hand') ||
-    tag.toLowerCase().includes('lefty') ||
-    tag.toLowerCase().includes('lh ') ||
-    tag === 'handedness_left' ||
-    tag.toLowerCase() === 'left'
-  ) || p.title.toLowerCase().includes('left hand') ||
-       p.title.toLowerCase().includes('left-hand') ||
-       p.title.toLowerCase().includes(' lh ') ||
-       p.title.toLowerCase().includes('lefty');
-  
-  handednessMatch = !isExplicitlyLeftHanded; // Show if NOT explicitly left-handed
-}
+    } else {
+      // For right-handed users (default), ONLY exclude if explicitly left-handed
+      const isExplicitlyLeftHanded = p.tags.some(tag => 
+        tag.toLowerCase().includes('left hand') ||
+        tag.toLowerCase().includes('left-hand') ||
+        tag.toLowerCase().includes('lefty') ||
+        tag.toLowerCase().includes('lh ') ||
+        tag === 'handedness_left' ||
+        tag.toLowerCase() === 'left'
+      ) || p.title.toLowerCase().includes('left hand') ||
+           p.title.toLowerCase().includes('left-hand') ||
+           p.title.toLowerCase().includes(' lh ') ||
+           p.title.toLowerCase().includes('lefty');
+      
+      handednessMatch = !isExplicitlyLeftHanded; // Show if NOT explicitly left-handed
+    }
     
     // If handedness doesn't match, this club is ELIMINATED - return false immediately
     if (!handednessMatch) {
@@ -248,16 +297,29 @@ function findBestMatches(products, categoryTag, profile, limit = 3) {
       return false;
     }
     
+    // HARD FILTER #3: BUDGET - Over budget = ELIMINATED
+    const withinBudget = p.price <= profile.budget;
+
+    if (!withinBudget) {
+      return false; // Over budget, ELIMINATED
+    }
+
+    // HARD FILTER #4: HEIGHT/LENGTH - Only for Drivers and Iron Sets
+    if (categoryTag === 'Drivers' || categoryTag === 'Iron Sets') {
+      const acceptableLengths = getAcceptableLengths(profile.height, categoryTag);
+      
+      if (acceptableLengths) {
+        const lengthMatch = checkLengthMatch(p, acceptableLengths);
+        
+        if (!lengthMatch) {
+          return false; // Wrong length for height, ELIMINATED
+        }
+      }
+    }
+
     // Only clubs that pass ALL filters reach this point
-// HARD FILTER #3: BUDGET - Over budget = ELIMINATED
-const withinBudget = p.price <= profile.budget;
-
-if (!withinBudget) {
-  return false; // Over budget, ELIMINATED
-}
-
-// Only clubs that pass ALL filters reach this point
-return hasCategory && inStock;  });
+    return hasCategory && inStock;
+  });
 
   // ========================================================================
   // SCORING PHASE - Only clubs that passed ALL filters are scored here
@@ -274,14 +336,15 @@ return hasCategory && inStock;  });
   });
 
   // Sort by score DESC, then by price DESC (expensive first when tied)
-const sorted = scored.sort((a, b) => {
-  if (b.score !== a.score) {
-    return b.score - a.score; // Higher score first
-  }
-  return b.price - a.price; // If tied, HIGHER price first (better condition)
-});
+  const sorted = scored.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score; // Higher score first
+    }
+    return b.price - a.price; // If tied, HIGHER price first (better condition)
+  });
   
-return sorted.slice(0, limit);}
+  return sorted.slice(0, limit);
+}
 
 function scoreClub(club, profile) {
   // NOTE: This function only scores clubs that already passed gender/handedness filters
@@ -290,74 +353,74 @@ function scoreClub(club, profile) {
   let score = 0;
   const handicapValue = parseHandicap(profile.handicap);
   
-// ===================================
-// PRIORITY 1: FLEX MATCH (Highest weight - 100 points)
-// ===================================
-if (profile.flex) {
-  const hasMatchingFlex = checkFlexMatch(club, profile.flex);
-  if (hasMatchingFlex) {
-    score += 100; // Exact flex match requested by user - HIGHEST PRIORITY
+  // ===================================
+  // PRIORITY 1: FLEX MATCH (Highest weight - 100 points)
+  // ===================================
+  if (profile.flex) {
+    const hasMatchingFlex = checkFlexMatch(club, profile.flex);
+    if (hasMatchingFlex) {
+      score += 100; // Exact flex match requested by user - HIGHEST PRIORITY
+    }
+  } else if (profile.swingSpeed) {
+    const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
+    const hasMatchingFlex = checkFlexMatch(club, idealFlex);
+    if (hasMatchingFlex) {
+      score += 100; // Flex matches swing speed - HIGHEST PRIORITY
+    }
   }
-} else if (profile.swingSpeed) {
-  const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
-  const hasMatchingFlex = checkFlexMatch(club, idealFlex);
-  if (hasMatchingFlex) {
-    score += 100; // Flex matches swing speed - HIGHEST PRIORITY
+
+  // ===================================
+  // PRIORITY 2: SKILL LEVEL MATCH (Second priority - 75 points)
+  // ===================================
+  let idealSkillTag = '';
+  if (handicapValue <= 10) {
+    idealSkillTag = 'Precision';
+  } else if (handicapValue <= 20) {
+    idealSkillTag = 'Control & Distance';
+  } else {
+    idealSkillTag = 'Forgiveness';
   }
-}
 
-// ===================================
-// PRIORITY 2: SKILL LEVEL MATCH (Second priority - 75 points)
-// ===================================
-let idealSkillTag = '';
-if (handicapValue <= 10) {
-  idealSkillTag = 'Precision';
-} else if (handicapValue <= 20) {
-  idealSkillTag = 'Control & Distance';
-} else {
-  idealSkillTag = 'Forgiveness';
-}
-
-const hasIdealSkill = club.tags.some(tag => 
-  tag.toLowerCase().includes(idealSkillTag.toLowerCase())
-);
-
-if (hasIdealSkill) {
-  score += 75; // Perfect skill level match - SECOND PRIORITY
-} else {
-  const hasAnySkill = club.tags.some(tag => 
-    tag.toLowerCase().includes('forgiveness') ||
-    tag.toLowerCase().includes('precision') ||
-    tag.toLowerCase().includes('control')
+  const hasIdealSkill = club.tags.some(tag => 
+    tag.toLowerCase().includes(idealSkillTag.toLowerCase())
   );
-  if (hasAnySkill) {
-    score += 35; // Has some skill tag, but not ideal
-  }
-}
 
-// ===================================
-// PRIORITY 3: BRAND PREFERENCE (Third priority - 50 points)
-// ===================================
-if (profile.brandPreferences && profile.brandPreferences.length > 0) {
-  const normalizedClubBrand = club.brand.trim().toLowerCase();
-  const matchesBrand = profile.brandPreferences.some(prefBrand => 
-    normalizedClubBrand === prefBrand.trim().toLowerCase() ||
-    normalizedClubBrand.includes(prefBrand.trim().toLowerCase())
-  );
-  
-  if (matchesBrand) {
-    score += 50; // User's preferred brand - THIRD PRIORITY
+  if (hasIdealSkill) {
+    score += 75; // Perfect skill level match - SECOND PRIORITY
+  } else {
+    const hasAnySkill = club.tags.some(tag => 
+      tag.toLowerCase().includes('forgiveness') ||
+      tag.toLowerCase().includes('precision') ||
+      tag.toLowerCase().includes('control')
+    );
+    if (hasAnySkill) {
+      score += 35; // Has some skill tag, but not ideal
+    }
   }
-}
 
-// ===================================
-// PRICE BONUS (Minor bonus for using budget - 0-10 points)
-// Only give bonus to items WITHIN budget
-// ===================================
-if (club.price <= profile.budget) {
-  const budgetUsageRatio = club.price / profile.budget;
-  score += Math.floor(budgetUsageRatio * 10); // 0-10 points based on price
-}
+  // ===================================
+  // PRIORITY 3: BRAND PREFERENCE (Third priority - 50 points)
+  // ===================================
+  if (profile.brandPreferences && profile.brandPreferences.length > 0) {
+    const normalizedClubBrand = club.brand.trim().toLowerCase();
+    const matchesBrand = profile.brandPreferences.some(prefBrand => 
+      normalizedClubBrand === prefBrand.trim().toLowerCase() ||
+      normalizedClubBrand.includes(prefBrand.trim().toLowerCase())
+    );
+    
+    if (matchesBrand) {
+      score += 50; // User's preferred brand - THIRD PRIORITY
+    }
+  }
+
+  // ===================================
+  // PRICE BONUS (Minor bonus for using budget - 0-10 points)
+  // Only give bonus to items WITHIN budget
+  // ===================================
+  if (club.price <= profile.budget) {
+    const budgetUsageRatio = club.price / profile.budget;
+    score += Math.floor(budgetUsageRatio * 10); // 0-10 points based on price
+  }
   
   // ===================================
   // GENDER MATCH (Minor bonus - already filtered, this is just a tiebreaker)
@@ -480,9 +543,19 @@ function generateMatchReason(club, profile, score) {
   } else if (club.price <= profile.budget) {
     reasons.push("Within budget");
   }
- if (profile.brandPreferences?.includes(club.brand)) {
-  reasons.push("⭐ Your preferred brand");
-}
+  
+  // Check brand preference with same normalization as scoring
+  if (profile.brandPreferences && profile.brandPreferences.length > 0) {
+    const normalizedClubBrand = club.brand.trim().toLowerCase();
+    const matchesBrand = profile.brandPreferences.some(prefBrand => 
+      normalizedClubBrand === prefBrand.trim().toLowerCase() ||
+      normalizedClubBrand.includes(prefBrand.trim().toLowerCase())
+    );
+    
+    if (matchesBrand) {
+      reasons.push("⭐ Your preferred brand");
+    }
+  }
   
   if (reasons.length === 0) {
     if (score >= 40) {
