@@ -168,16 +168,22 @@ function findBestMatches(products, categoryTag, profile, limit = 3) {
         tag.toLowerCase().includes('lefty') ||
         tag === 'handedness_left'
       );
-    } else {
-      // For right-handed users (default), ONLY exclude if explicitly left-handed
-      const isExplicitlyLeftHanded = p.tags.some(tag => 
-        tag.toLowerCase() === 'left handed' ||
-        tag.toLowerCase() === 'left-handed' ||
-        tag.toLowerCase() === 'lefty' ||
-        tag === 'handedness_left'
-      );
-      handednessMatch = !isExplicitlyLeftHanded; // Show if NOT explicitly left-handed
-    }
+ } else {
+  // For right-handed users (default), ONLY exclude if explicitly left-handed
+  const isExplicitlyLeftHanded = p.tags.some(tag => 
+    tag.toLowerCase().includes('left hand') ||
+    tag.toLowerCase().includes('left-hand') ||
+    tag.toLowerCase().includes('lefty') ||
+    tag.toLowerCase().includes('lh ') ||
+    tag === 'handedness_left' ||
+    tag.toLowerCase() === 'left'
+  ) || p.title.toLowerCase().includes('left hand') ||
+       p.title.toLowerCase().includes('left-hand') ||
+       p.title.toLowerCase().includes(' lh ') ||
+       p.title.toLowerCase().includes('lefty');
+  
+  handednessMatch = !isExplicitlyLeftHanded; // Show if NOT explicitly left-handed
+}
     
     // If handedness doesn't match, this club is ELIMINATED - return false immediately
     if (!handednessMatch) {
@@ -318,11 +324,11 @@ function scoreClub(club, profile) {
   // ===================================
   // PRIORITY 3: BRAND PREFERENCE (Third priority)
   // ===================================
-  if (profile.brandPreferences && profile.brandPreferences.length > 0) {
-    if (profile.brandPreferences.includes(club.brand)) {
-      score += 20; // User's preferred brand
-    }
+if (profile.brandPreferences && profile.brandPreferences.length > 0) {
+  if (profile.brandPreferences.includes(club.brand)) {
+    score += 75; // User's preferred brand - VERY HIGH PRIORITY
   }
+}
   
   // ===================================
   // PRICE (Tiebreaker - within budget only)
@@ -453,10 +459,9 @@ function generateMatchReason(club, profile, score) {
   } else if (club.price <= profile.budget) {
     reasons.push("Within budget");
   }
-  
-  if (profile.brandPreferences?.includes(club.brand)) {
-    reasons.push("Your preferred brand");
-  }
+ if (profile.brandPreferences?.includes(club.brand)) {
+  reasons.push("⭐ Your preferred brand");
+}
   
   if (reasons.length === 0) {
     if (score >= 40) {
