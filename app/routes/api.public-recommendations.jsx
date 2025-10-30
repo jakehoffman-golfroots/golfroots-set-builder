@@ -188,6 +188,35 @@ const shopDomain = process.env.SHOPIFY_SHOP_DOMAIN || 'golfroots.myshopify.com';
 
     console.log(`Total products: ${allProducts.length}, Golf clubs with inventory: ${products.length}`);
 
+    // Debug: Show all drivers
+const allDrivers = allProducts.filter(p => p.tags.includes('Drivers'));
+console.log(`\n=== DRIVER DEBUG ===`);
+console.log(`Total drivers in store: ${allDrivers.length}`);
+
+// Show Titleist drivers specifically
+const titleistDrivers = allDrivers.filter(p => p.brand === 'Titleist');
+console.log(`Titleist drivers found: ${titleistDrivers.length}`);
+
+titleistDrivers.forEach(driver => {
+  console.log(`\nTitleist Driver: ${driver.title}`);
+  console.log(`  Price: $${driver.price}`);
+  console.log(`  Inventory: ${driver.inventory}`);
+  console.log(`  Available: ${driver.availableForSale}`);
+  console.log(`  Tags: ${driver.tags.join(', ')}`);
+});
+
+// Show what drivers have stiff flex
+const stiffDrivers = allDrivers.filter(p => {
+  const titleLower = p.title.toLowerCase();
+  return titleLower.includes('stiff') || titleLower.includes('s flex');
+});
+console.log(`\nDrivers with stiff flex: ${stiffDrivers.length}`);
+stiffDrivers.forEach(d => {
+  console.log(`  - ${d.brand} ${d.title} ($${d.price})`);
+});
+
+console.log(`=== END DRIVER DEBUG ===\n`);
+
     const budgetAllocation = {
       driver: budget * 0.25,
       woods: budget * 0.10,
@@ -335,6 +364,39 @@ function findBestMatches(products, categoryTag, profile, limit = 3) {
     return hasCategory && inStock;
   });
 
+  if (categoryTag === 'Drivers') {
+  console.log(`\n=== DRIVER FILTER DEBUG ===`);
+  console.log(`Products before filter: ${products.filter(p => p.tags.includes('Drivers')).length}`);
+  console.log(`Products after filter: ${filtered.length}`);
+  
+  // Check what happened to Titleist drivers
+  const titleistBefore = products.filter(p => p.tags.includes('Drivers') && p.brand === 'Titleist');
+  const titleistAfter = filtered.filter(p => p.brand === 'Titleist');
+  
+  console.log(`Titleist drivers before filter: ${titleistBefore.length}`);
+  console.log(`Titleist drivers after filter: ${titleistAfter.length}`);
+  
+  if (titleistBefore.length > titleistAfter.length) {
+    console.log(`\n⚠️ SOME TITLEIST DRIVERS WERE FILTERED OUT!`);
+    const filteredOut = titleistBefore.filter(b => !titleistAfter.find(a => a.id === b.id));
+    filteredOut.forEach(driver => {
+      console.log(`\nFiltered Out: ${driver.title}`);
+      console.log(`  Price: $${driver.price}`);
+      console.log(`  Tags: ${driver.tags.join(', ')}`);
+      
+      // Test each filter condition
+      const hasCategory = driver.tags.includes(categoryTag);
+      const inStock = driver.inventory > 0;
+      
+      console.log(`  Has Category (Drivers): ${hasCategory}`);
+      console.log(`  In Stock: ${inStock} (inventory: ${driver.inventory})`);
+      console.log(`  Available for Sale: ${driver.availableForSale}`);
+    });
+  }
+  console.log(`=== END FILTER DEBUG ===\n`);
+}
+
+
   // ========================================================================
   // SCORING PHASE - Only clubs that passed ALL filters are scored here
   // At this point, all clubs have correct gender AND handedness
@@ -461,6 +523,13 @@ function checkFlexMatch(club, requestedFlex) {
   const titleLower = club.title.toLowerCase();
   const tagsLower = club.tags.map(t => t.toLowerCase());
   const allText = [...tagsLower, titleLower].join(' ');
+
+    const isDriver = club.tags.includes('Drivers');
+  if (isDriver && club.brand === 'Titleist') {
+    console.log(`\n🔍 Checking flex for: ${club.title}`);
+    console.log(`  Requested flex: ${requestedFlex}`);
+    console.log(`  All text: ${allText}`);
+  }
   
   // Define what to look for and what to EXCLUDE for each flex type
   const flexPatterns = {
@@ -498,6 +567,10 @@ function checkFlexMatch(club, requestedFlex) {
   const hasIncluded = pattern.include.some(includePattern => 
     allText.includes(includePattern)
   );
+
+   if (isDriver && club.brand === 'Titleist') {
+    console.log(`  ✅ Flex match result: ${hasIncluded && !hasExcluded}`);
+  }
   
   return hasIncluded;
 }
