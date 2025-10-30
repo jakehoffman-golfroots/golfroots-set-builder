@@ -120,22 +120,41 @@ export async function action({ request }) {
     console.log(`✅ Fetched ${allProductsFromShopify.length} products from Shopify in ${pageCount} pages`);
 
     // Transform and save to database
-    const productsToSave = allProductsFromShopify.map(({ node }) => {
-      const variant = node.variants.edges[0]?.node;
-      return {
-        shopifyId: node.id,
-        title: node.title,
-        brand: node.vendor,
-        productType: node.productType,
-        price: parseFloat(node.priceRangeV2.minVariantPrice.amount),
-        image: node.images.edges[0]?.node.url || null,
-        variantId: variant?.id || '',
-        inventory: variant?.inventoryQuantity || 0,
-        availableForSale: variant?.availableForSale || false,
-        tags: node.tags,
-        lastSynced: new Date(),
-      };
-    });
+const productsToSave = allProductsFromShopify.map(({ node }) => {
+  const variant = node.variants.edges[0]?.node;
+  
+  // Extract brand from title (first word is usually the brand)
+  let brand = node.vendor; // Default to vendor
+  
+  // List of known golf brands to look for in the title
+  const knownBrands = [
+    'Titleist', 'Callaway', 'TaylorMade', 'Ping', 'Mizuno', 
+    'Cobra', 'Cleveland', 'Srixon', 'Wilson', 'Tour Edge',
+    'Adams', 'Nike', 'Bridgestone', 'PXG', 'Honma', 'Fourteen'
+  ];
+  
+  // Check if title starts with a known brand
+  for (const knownBrand of knownBrands) {
+    if (node.title.toLowerCase().startsWith(knownBrand.toLowerCase())) {
+      brand = knownBrand;
+      break;
+    }
+  }
+  
+  return {
+    shopifyId: node.id,
+    title: node.title,
+    brand: brand,  // ← Now uses extracted brand from title
+    productType: node.productType,
+    price: parseFloat(node.priceRangeV2.minVariantPrice.amount),
+    image: node.images.edges[0]?.node.url || null,
+    variantId: variant?.id || '',
+    inventory: variant?.inventoryQuantity || 0,
+    availableForSale: variant?.availableForSale || false,
+    tags: node.tags,
+    lastSynced: new Date(),
+  };
+});
 
     // Clear old products and insert new ones
     console.log('🗑️  Clearing old products from database...');
