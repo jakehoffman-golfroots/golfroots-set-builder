@@ -9,8 +9,8 @@ generator client {
 // enough when changing adapters.
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
@@ -29,4 +29,23 @@ model Session {
   locale        String?
   collaborator  Boolean?  @default(false)
   emailVerified Boolean?  @default(false)
+}
+
+model GolfProduct {
+  id                String   @id @default(cuid())
+  shopifyId         String   @unique
+  title             String
+  brand             String
+  productType       String
+  price             Float
+  image             String?
+  variantId         String
+  inventory         Int
+  availableForSale  Boolean
+  tags              String[] // Array of tags
+  lastSynced        DateTime @default(now())
+  
+  @@index([brand])
+  @@index([availableForSale, inventory])
+  @@index([lastSynced])
 }

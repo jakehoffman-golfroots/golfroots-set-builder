@@ -1,3 +1,5 @@
+import { PrismaClient } from '@prisma/client';
+
 export async function loader({ request }) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -31,191 +33,63 @@ export async function action({ request }) {
       handedness = 'right',
     } = body;
 
-const shopDomain = process.env.SHOPIFY_SHOP_DOMAIN || 'golfroots.myshopify.com';
-    
-    // Try to get access token from database
-    console.log('Attempting to get access token from database...');
-    let accessToken = null;
-    
-    try {
-      const { PrismaClient } = await import('@prisma/client');
-      const prisma = new PrismaClient();
-      
-      // Get all sessions to see what we have
-      const allSessions = await prisma.session.findMany({
-        where: { shop: shopDomain }
-      });
-      
-      console.log(`Found ${allSessions.length} sessions for ${shopDomain}`);
-      
-      // Look for offline session (has access token in state field)
-      const offlineSession = allSessions.find(s => !s.isOnline && s.state);
-      
-      if (offlineSession) {
-        accessToken = offlineSession.state;
-        console.log('Found offline session with access token');
-      } else {
-        console.log('No offline session found. Session details:', 
-          allSessions.map(s => ({ 
-            id: s.id, 
-            isOnline: s.isOnline, 
-            hasState: !!s.state,
-            hasContent: !!s.content 
-          }))
-        );
-      }
-      
-      await prisma.$disconnect();
-    } catch (dbError) {
-      console.error('Database error:', dbError.message);
-    }
+    console.log('Loading products from database...');
+    const dbStartTime = Date.now();
 
-    // If no token from database, check environment
-    if (!accessToken) {
-      console.log('No token from database, checking environment...');
-      accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
-      if (accessToken) {
-        console.log('Found token in environment');
-      }
-    }
+    // Read from database instead of Shopify API
+    const prisma = new PrismaClient();
 
-    if (!accessToken) {
-      console.error('NO ACCESS TOKEN AVAILABLE');
-      throw new Error('No access token configured. Please check your app installation.');
-    }
-
-    console.log('Making GraphQL request to Shopify...');
-
-    const graphqlEndpoint = `https://${shopDomain}/admin/api/2024-10/graphql.json`;
-    
-    const graphqlQuery = `
-      query getSetBuilderProducts {
-        products(first: 250, query: "status:active") {
-          edges {
-            node {
-              id
-              title
-              vendor
-              productType
-              priceRangeV2 {
-                minVariantPrice {
-                  amount
-                }
-              }
-              images(first: 1) {
-                edges {
-                  node {
-                    url
-                  }
-                }
-              }
-              variants(first: 1) {
-                edges {
-                  node {
-                    id
-                    inventoryQuantity
-                    availableForSale
-                    inventoryPolicy
-                  }
-                }
-              }
-              tags
-            }
-          }
+    const allProducts = await prisma.golfProduct.findMany({
+      where: {
+        availableForSale: true,
+        inventory: {
+          gt: 0
         }
       }
-    `;
-
-    const shopifyResponse = await fetch(graphqlEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': accessToken,
-      },
-      body: JSON.stringify({ query: graphqlQuery })
     });
 
-    console.log('Shopify response status:', shopifyResponse.status);
+    await prisma.$disconnect();
 
-    if (!shopifyResponse.ok) {
-      const errorText = await shopifyResponse.text();
-      console.error('Shopify API error response:', errorText);
-      throw new Error(`Shopify API error: ${shopifyResponse.status} - ${errorText}`);
-    }
+    const dbElapsed = Date.now() - dbStartTime;
+    console.log(`✅ Loaded ${allProducts.length} products from database in ${dbElapsed}ms`);
 
-    const data = await shopifyResponse.json();
-
-    if (data.errors) {
-      console.error('GraphQL errors:', data.errors);
-      throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-    }
-
-    console.log('Successfully fetched products from Shopify');
-
-    const allProducts = data.data.products.edges.map(({ node }) => {
-      const variant = node.variants.edges[0]?.node;
-      const product = {
-        id: node.id,
-        title: node.title,
-        brand: node.vendor,
-        productType: node.productType,
-        price: parseFloat(node.priceRangeV2.minVariantPrice.amount),
-        image: node.images.edges[0]?.node.url || null,
-        variantId: variant?.id,
-        inventory: variant?.inventoryQuantity || 0,
-        availableForSale: variant?.availableForSale || false,
-        tags: node.tags,
-      };
-      
-      // Log details for Iron products
-      if (node.title.toLowerCase().includes('iron')) {
-        console.log(`Product: ${node.title}`);
-        console.log(`  Variant ID: ${variant?.id}`);
-        console.log(`  Inventory Quantity: ${variant?.inventoryQuantity}`);
-        console.log(`  Available For Sale: ${variant?.availableForSale}`);
-        console.log(`  Inventory Policy: ${variant?.inventoryPolicy}`);
+    // Check if data is stale (older than 2 hours)
+    if (allProducts.length > 0) {
+      const oldestSync = allProducts[0]?.lastSynced;
+      if (oldestSync) {
+        const ageHours = (Date.now() - new Date(oldestSync).getTime()) / (1000 * 60 * 60);
+        if (ageHours > 2) {
+          console.log(`⚠️  Product data is ${ageHours.toFixed(1)} hours old - consider running sync`);
+        } else {
+          console.log(`✅ Product data is fresh (${ageHours.toFixed(1)} hours old)`);
+        }
       }
-      
-      return product;
-    });
+    }
 
+    if (allProducts.length === 0) {
+      console.error('❌ No products in database! Run sync first: POST /api/sync-products');
+      throw new Error('No products available. Please run product sync first.');
+    }
+
+    // Filter for valid golf clubs
     const validCategories = ['Drivers', 'Woods', 'Hybrids', 'Iron Sets', 'Wedges', 'Putters'];
-    const products = allProducts.filter(p => 
-      p.tags.some(tag => validCategories.includes(tag)) && 
-      p.inventory > 0 && 
-      p.availableForSale
+    const products = allProducts.filter(p =>
+      p.tags.some(tag => validCategories.includes(tag))
     );
 
-    console.log(`Total products: ${allProducts.length}, Golf clubs with inventory: ${products.length}`);
+    console.log(`📊 Total golf clubs with inventory: ${products.length}`);
 
-    // Debug: Show all drivers
-const allDrivers = allProducts.filter(p => p.tags.includes('Drivers'));
-console.log(`\n=== DRIVER DEBUG ===`);
-console.log(`Total drivers in store: ${allDrivers.length}`);
+    // Log breakdown by category
+    const breakdown = {
+      drivers: products.filter(p => p.tags.includes('Drivers')).length,
+      woods: products.filter(p => p.tags.includes('Woods')).length,
+      hybrids: products.filter(p => p.tags.includes('Hybrids')).length,
+      irons: products.filter(p => p.tags.includes('Iron Sets')).length,
+      wedges: products.filter(p => p.tags.includes('Wedges') || p.tags.includes('Sand Wedges')).length,
+      putters: products.filter(p => p.tags.includes('Putters')).length,
+    };
 
-// Show Titleist drivers specifically
-const titleistDrivers = allDrivers.filter(p => p.brand === 'Titleist');
-console.log(`Titleist drivers found: ${titleistDrivers.length}`);
-
-titleistDrivers.forEach(driver => {
-  console.log(`\nTitleist Driver: ${driver.title}`);
-  console.log(`  Price: $${driver.price}`);
-  console.log(`  Inventory: ${driver.inventory}`);
-  console.log(`  Available: ${driver.availableForSale}`);
-  console.log(`  Tags: ${driver.tags.join(', ')}`);
-});
-
-// Show what drivers have stiff flex
-const stiffDrivers = allDrivers.filter(p => {
-  const titleLower = p.title.toLowerCase();
-  return titleLower.includes('stiff') || titleLower.includes('s flex');
-});
-console.log(`\nDrivers with stiff flex: ${stiffDrivers.length}`);
-stiffDrivers.forEach(d => {
-  console.log(`  - ${d.brand} ${d.title} ($${d.price})`);
-});
-
-console.log(`=== END DRIVER DEBUG ===\n`);
+    console.log(`📊 Category breakdown:`, breakdown);
 
     const budgetAllocation = {
       driver: budget * 0.25,
@@ -226,14 +100,14 @@ console.log(`=== END DRIVER DEBUG ===\n`);
       putter: budget * 0.10,
     };
 
-const recommendations = {
-  driver: findBestMatches(products, 'Drivers', { handicap, budget: budgetAllocation.driver, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-  woods: findBestMatches(products, 'Woods', { handicap, budget: budgetAllocation.woods, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-  hybrids: findBestMatches(products, 'Hybrids', { handicap, budget: budgetAllocation.hybrids, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-  irons: findBestMatches(products, 'Iron Sets', { handicap, budget: budgetAllocation.irons, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-  wedges: findBestMatches(products, 'Wedges', { handicap, budget: budgetAllocation.wedges, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-  putter: findBestMatches(products, 'Putters', { handicap, budget: budgetAllocation.putter, brandPreferences, flex, gender, handedness }, 3),
-};
+    const recommendations = {
+      driver: findBestMatches(products, 'Drivers', { handicap, budget: budgetAllocation.driver, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
+      woods: findBestMatches(products, 'Woods', { handicap, budget: budgetAllocation.woods, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
+      hybrids: findBestMatches(products, 'Hybrids', { handicap, budget: budgetAllocation.hybrids, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
+      irons: findBestMatches(products, 'Iron Sets', { handicap, budget: budgetAllocation.irons, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
+      wedges: findBestMatches(products, 'Wedges', { handicap, budget: budgetAllocation.wedges, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
+      putter: findBestMatches(products, 'Putters', { handicap, budget: budgetAllocation.putter, brandPreferences, flex, gender, handedness }, 3),
+    };
 
     console.log('Successfully generated recommendations');
     console.log('=== PUBLIC API SUCCESS ===');
@@ -284,24 +158,25 @@ function findBestMatches(products, categoryTag, profile, limit = 3) {
       }
     }
     
-    // HARD FILTER #1: HANDEDNESS - Wrong handedness = ELIMINATED
+    // HARD FILTER #1: HANDEDNESS - More lenient approach
     let handednessMatch = true;
+    
     if (profile.handedness === 'left') {
-      // For left-handed users, ONLY show clubs tagged as left-handed
+      // For left-handed users, ONLY show clubs explicitly tagged as left-handed
       handednessMatch = p.tags.some(tag => 
         tag.toLowerCase().includes('left') || 
         tag.toLowerCase().includes('lefty') ||
         tag === 'handedness_left'
       );
     } else {
-      // For right-handed users (default), show right-handed OR untagged clubs
-      // Exclude anything explicitly tagged as left-handed
-      const isLeftHanded = p.tags.some(tag => 
-        tag.toLowerCase().includes('left') || 
-        tag.toLowerCase().includes('lefty') ||
+      // For right-handed users (default), ONLY exclude if explicitly left-handed
+      const isExplicitlyLeftHanded = p.tags.some(tag => 
+        tag.toLowerCase() === 'left handed' ||
+        tag.toLowerCase() === 'left-handed' ||
+        tag.toLowerCase() === 'lefty' ||
         tag === 'handedness_left'
       );
-      handednessMatch = !isLeftHanded; // Show if NOT left-handed
+      handednessMatch = !isExplicitlyLeftHanded; // Show if NOT explicitly left-handed
     }
     
     // If handedness doesn't match, this club is ELIMINATED - return false immediately
@@ -309,39 +184,36 @@ function findBestMatches(products, categoryTag, profile, limit = 3) {
       return false;
     }
     
-    // HARD FILTER #2: GENDER - Wrong gender = ELIMINATED
+    // HARD FILTER #2: GENDER - More lenient approach
     let genderMatch = true;
     const titleLower = p.title.toLowerCase();
     const tagsLower = p.tags.map(t => t.toLowerCase());
     
-    // Check if product is women's/ladies
-    const isWomens = tagsLower.some(tag => 
+    // Check if product is explicitly women's/ladies
+    const isExplicitlyWomens = tagsLower.some(tag => 
       tag.includes('women') || 
       tag.includes('ladies') || 
       tag.includes('female') ||
       tag.includes('lady')
     ) || titleLower.includes('women') || 
         titleLower.includes('ladies') || 
-        titleLower.includes('lady') ||
-        titleLower.includes("women's flex") ||
-        titleLower.includes("ladies flex");
+        titleLower.includes('lady');
     
-    // Check if product is men's
-    const isMens = tagsLower.some(tag => 
-      tag.includes('men') || 
-      tag.includes('male') ||
+    // Check if product is explicitly men's
+    const isExplicitlyMens = tagsLower.some(tag => 
+      tag.includes("men's") || 
       tag === 'gender_male'
-    ) || titleLower.includes("men's");
+    ) || titleLower.includes("men's only");
     
     if (profile.gender === 'male') {
-      // NEVER show women's clubs to men - ELIMINATED
-      genderMatch = !isWomens;
+      // For men: Only exclude if EXPLICITLY women's/ladies
+      genderMatch = !isExplicitlyWomens;
     } else if (profile.gender === 'female') {
-      // ONLY show women's clubs to women (or unisex if no women's available)
-      genderMatch = isWomens || (!isMens && !isWomens); // Show women's or truly unisex
+      // For women: Show women's items, or unisex if they exist
+      genderMatch = isExplicitlyWomens || (!isExplicitlyMens && !isExplicitlyWomens);
     } else if (profile.gender === 'unisex') {
-      // For unisex preference, exclude explicitly gendered clubs
-      genderMatch = !isWomens && !isMens;
+      // For unisex: Show everything except explicitly gendered
+      genderMatch = true; // Show all for now
     }
     
     // Additional flex-based gender filtering for edge cases
@@ -363,39 +235,6 @@ function findBestMatches(products, categoryTag, profile, limit = 3) {
     // Only clubs that pass ALL filters reach this point
     return hasCategory && inStock;
   });
-
-  if (categoryTag === 'Drivers') {
-  console.log(`\n=== DRIVER FILTER DEBUG ===`);
-  console.log(`Products before filter: ${products.filter(p => p.tags.includes('Drivers')).length}`);
-  console.log(`Products after filter: ${filtered.length}`);
-  
-  // Check what happened to Titleist drivers
-  const titleistBefore = products.filter(p => p.tags.includes('Drivers') && p.brand === 'Titleist');
-  const titleistAfter = filtered.filter(p => p.brand === 'Titleist');
-  
-  console.log(`Titleist drivers before filter: ${titleistBefore.length}`);
-  console.log(`Titleist drivers after filter: ${titleistAfter.length}`);
-  
-  if (titleistBefore.length > titleistAfter.length) {
-    console.log(`\n⚠️ SOME TITLEIST DRIVERS WERE FILTERED OUT!`);
-    const filteredOut = titleistBefore.filter(b => !titleistAfter.find(a => a.id === b.id));
-    filteredOut.forEach(driver => {
-      console.log(`\nFiltered Out: ${driver.title}`);
-      console.log(`  Price: $${driver.price}`);
-      console.log(`  Tags: ${driver.tags.join(', ')}`);
-      
-      // Test each filter condition
-      const hasCategory = driver.tags.includes(categoryTag);
-      const inStock = driver.inventory > 0;
-      
-      console.log(`  Has Category (Drivers): ${hasCategory}`);
-      console.log(`  In Stock: ${inStock} (inventory: ${driver.inventory})`);
-      console.log(`  Available for Sale: ${driver.availableForSale}`);
-    });
-  }
-  console.log(`=== END FILTER DEBUG ===\n`);
-}
-
 
   // ========================================================================
   // SCORING PHASE - Only clubs that passed ALL filters are scored here
@@ -523,13 +362,6 @@ function checkFlexMatch(club, requestedFlex) {
   const titleLower = club.title.toLowerCase();
   const tagsLower = club.tags.map(t => t.toLowerCase());
   const allText = [...tagsLower, titleLower].join(' ');
-
-    const isDriver = club.tags.includes('Drivers');
-  if (isDriver && club.brand === 'Titleist') {
-    console.log(`\n🔍 Checking flex for: ${club.title}`);
-    console.log(`  Requested flex: ${requestedFlex}`);
-    console.log(`  All text: ${allText}`);
-  }
   
   // Define what to look for and what to EXCLUDE for each flex type
   const flexPatterns = {
@@ -567,10 +399,6 @@ function checkFlexMatch(club, requestedFlex) {
   const hasIncluded = pattern.include.some(includePattern => 
     allText.includes(includePattern)
   );
-
-   if (isDriver && club.brand === 'Titleist') {
-    console.log(`  ✅ Flex match result: ${hasIncluded && !hasExcluded}`);
-  }
   
   return hasIncluded;
 }
@@ -591,25 +419,6 @@ function getIdealFlexFromSpeed(swingSpeed) {
     'fast': 'stiff'
   };
   return speedMap[swingSpeed.toLowerCase()] || 'regular';
-}
-
-function getIdealFlexTags(swingSpeed) {
-  const speedMap = {
-    'slow': ['flex_senior', 'Senior Flex', 'Senior/Womens/A Flex', 'Lady'],
-    'moderate': ['flex_regular', 'Regular Flex', 'reg'],
-    'fast': ['flex_stiff', 'Stiff Flex', 'X Stiff Flex']
-  };
-  return speedMap[swingSpeed.toLowerCase()] || ['flex_regular', 'Regular Flex'];
-}
-
-function getFlexTagsFromPreference(flexPreference) {
-  const flexMap = {
-    'senior': ['flex_senior', 'Senior Flex', 'Senior/Womens/A Flex', 'A Flex'],
-    'regular': ['flex_regular', 'Regular Flex', 'R Flex', 'reg'],
-    'stiff': ['flex_stiff', 'Stiff Flex', 'S Flex'],
-    'extra-stiff': ['X Stiff Flex', 'Extra Stiff', 'X Flex']
-  };
-  return flexMap[flexPreference.toLowerCase()] || ['flex_regular'];
 }
 
 function generateMatchReason(club, profile, score) {
