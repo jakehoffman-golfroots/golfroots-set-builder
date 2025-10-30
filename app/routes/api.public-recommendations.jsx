@@ -192,48 +192,82 @@ function checkLengthMatch(product, acceptableLengths) {
   if (!acceptableLengths) return true; // No filtering needed
   
   // Check both title and tags for length indicators
-  const titleLower = product.title.toLowerCase();
-  const tagsLower = product.tags.map(t => t.toLowerCase());
-  const allText = [...tagsLower, titleLower].join(' | '); // Use separator for better matching
+  const title = product.title;
+  const tags = product.tags;
   
-  // For each acceptable length, check for matches
-  const hasMatch = acceptableLengths.some(length => {
-    const lengthLower = length.toLowerCase();
-    const lengthNumeric = length.replace('"', '').replace('+', '\\+').replace('-', '\\-'); // Escape special chars
+  console.log(`  🔍 Checking: ${title}`);
+  console.log(`  📝 Tags: ${tags.join(', ')}`);
+  
+  // For each acceptable length, check for exact matches
+  const hasMatch = acceptableLengths.some(acceptableLength => {
+    // Remove quotes and get numeric value for comparison
+    const cleanAcceptable = acceptableLength.replace(/"/g, '');
     
-    // Multiple matching strategies:
-    // 1. Exact tag match (e.g., "44\"" or "Standard Length")
-    if (tagsLower.some(tag => tag === lengthLower || tag === length)) {
-      return true;
+    // Strategy 1: Check tags for EXACT match
+    for (const tag of tags) {
+      const tagLower = tag.toLowerCase();
+      const acceptableLower = acceptableLength.toLowerCase();
+      
+      // Exact tag match
+      if (tagLower === acceptableLower || tagLower === cleanAcceptable) {
+        console.log(`  ✅ EXACT TAG MATCH: "${tag}" === "${acceptableLength}"`);
+        return true;
+      }
+      
+      // Tag contains the exact length with quote or inch
+      if (tagLower === cleanAcceptable + '"' || 
+          tagLower === cleanAcceptable + ' inch' ||
+          tagLower === cleanAcceptable + ' in' ||
+          tagLower === cleanAcceptable + 'inch' ||
+          tagLower === cleanAcceptable + 'in') {
+        console.log(`  ✅ TAG MATCH: "${tag}" matches "${acceptableLength}"`);
+        return true;
+      }
     }
     
-    // 2. Title contains the length
-    if (titleLower.includes(lengthLower)) {
-      return true;
+    // Strategy 2: Check title for length WITH context
+    const titleLower = title.toLowerCase();
+    
+    // For numeric lengths like "44", "44.5", "45.5", etc.
+    if (/^[0-9+\-\.]+\"?$/.test(cleanAcceptable)) {
+      // Build very specific patterns that won't match partial numbers
+      const patterns = [
+        // Length at end of string with quote: "44\""
+        new RegExp(`${cleanAcceptable.replace(/[+\-\.]/g, '\\$&')}"\\s*$`, 'i'),
+        // Length with inch: "44 inch" or "44inch"
+        new RegExp(`${cleanAcceptable.replace(/[+\-\.]/g, '\\$&')}\\s*inch`, 'i'),
+        // Length with space before and quote after: " 44\""
+        new RegExp(`\\s${cleanAcceptable.replace(/[+\-\.]/g, '\\$&')}"`, 'i'),
+        // Length at start with quote: "44\" driver"
+        new RegExp(`^${cleanAcceptable.replace(/[+\-\.]/g, '\\$&')}"`, 'i'),
+      ];
+      
+      if (patterns.some(pattern => pattern.test(titleLower))) {
+        console.log(`  ✅ TITLE MATCH: "${title}" contains "${acceptableLength}"`);
+        return true;
+      }
     }
     
-    // 3. Match numeric length patterns (e.g., "44", "44.5", "+0.5")
-    // Look for the length as a standalone value
-    const patterns = [
-      new RegExp(`\\b${lengthNumeric}\\b`, 'i'),           // Exact word boundary match
-      new RegExp(`\\b${lengthNumeric}"`, 'i'),              // With quote
-      new RegExp(`\\b${lengthNumeric}\\s*inch`, 'i'),      // With "inch"
-      new RegExp(`\\b${lengthNumeric}\\s*in\\b`, 'i'),     // With "in"
-    ];
-    
-    if (patterns.some(pattern => pattern.test(allText))) {
-      return true;
-    }
-    
-    // 4. Special handling for "Standard" - very common
-    if (lengthLower === 'standard' || lengthLower === 'standard length') {
-      if (allText.includes('standard length') || allText.includes('standard')) {
+    // Strategy 3: Special handling for "Standard" or "Standard Length"
+    if (acceptableLength === 'Standard' || acceptableLength === 'Standard Length') {
+      if (tags.some(tag => tag.toLowerCase() === 'standard' || tag.toLowerCase() === 'standard length')) {
+        console.log(`  ✅ STANDARD MATCH in tags`);
+        return true;
+      }
+      
+      if (/\bstandard\s+length\b/i.test(titleLower) || 
+          /\bstandard\b/i.test(titleLower)) {
+        console.log(`  ✅ STANDARD MATCH in title`);
         return true;
       }
     }
     
     return false;
   });
+  
+  if (!hasMatch) {
+    console.log(`  ❌ NO MATCH found for acceptable lengths: ${acceptableLengths.join(', ')}`);
+  }
   
   return hasMatch;
 }
