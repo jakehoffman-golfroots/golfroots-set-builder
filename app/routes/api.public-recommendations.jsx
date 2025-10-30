@@ -91,6 +91,16 @@ export async function action({ request }) {
 
     console.log(`📊 Category breakdown:`, breakdown);
 
+    console.log('\n=== BRAND DEBUG ===');
+const hybridBrands = products
+  .filter(p => p.tags.includes('Hybrids'))
+  .map(p => p.brand)
+  .filter((brand, index, self) => self.indexOf(brand) === index) // unique brands
+  .slice(0, 10);
+console.log('Hybrid brands in database:', hybridBrands);
+console.log('User selected brand:', brandPreferences);
+console.log('=== END BRAND DEBUG ===\n');
+
     const budgetAllocation = {
       driver: budget * 0.25,
       woods: budget * 0.10,
