@@ -111,12 +111,12 @@ console.log('=== END BRAND DEBUG ===\n');
     };
 
     const recommendations = {
-      driver: findBestMatches(products, 'Drivers', { handicap, budget: budgetAllocation.driver, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-      woods: findBestMatches(products, 'Woods', { handicap, budget: budgetAllocation.woods, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-      hybrids: findBestMatches(products, 'Hybrids', { handicap, budget: budgetAllocation.hybrids, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-      irons: findBestMatches(products, 'Iron Sets', { handicap, budget: budgetAllocation.irons, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-      wedges: findBestMatches(products, 'Wedges', { handicap, budget: budgetAllocation.wedges, brandPreferences, swingSpeed, flex, gender, handedness }, 3),
-      putter: findBestMatches(products, 'Putters', { handicap, budget: budgetAllocation.putter, brandPreferences, flex, gender, handedness }, 3),
+      driver: findBestMatches(products, 'Drivers', { handicap, budget: budgetAllocation.driver, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
+      woods: findBestMatches(products, 'Woods', { handicap, budget: budgetAllocation.woods, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
+      hybrids: findBestMatches(products, 'Hybrids', { handicap, budget: budgetAllocation.hybrids, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
+      irons: findBestMatches(products, 'Iron Sets', { handicap, budget: budgetAllocation.irons, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
+      wedges: findBestMatches(products, 'Wedges', { handicap, budget: budgetAllocation.wedges, brandPreferences, swingSpeed, flex, gender, handedness }, 12),
+      putter: findBestMatches(products, 'Putters', { handicap, budget: budgetAllocation.putter, brandPreferences, flex, gender, handedness },12),
     };
 
     console.log('Successfully generated recommendations');
@@ -249,8 +249,15 @@ function findBestMatches(products, categoryTag, profile, limit = 3) {
     }
     
     // Only clubs that pass ALL filters reach this point
-    return hasCategory && inStock;
-  });
+// HARD FILTER #3: BUDGET - Over budget = ELIMINATED
+const withinBudget = p.price <= profile.budget;
+
+if (!withinBudget) {
+  return false; // Over budget, ELIMINATED
+}
+
+// Only clubs that pass ALL filters reach this point
+return hasCategory && inStock;  });
 
   // ========================================================================
   // SCORING PHASE - Only clubs that passed ALL filters are scored here
@@ -267,15 +274,14 @@ function findBestMatches(products, categoryTag, profile, limit = 3) {
   });
 
   // Sort by score DESC, then by price DESC (expensive first when tied)
-  const sorted = scored.sort((a, b) => {
-    if (b.score !== a.score) {
-      return b.score - a.score; // Higher score first
-    }
-    return b.price - a.price; // If tied, higher price first
-  });
+const sorted = scored.sort((a, b) => {
+  if (b.score !== a.score) {
+    return b.score - a.score; // Higher score first
+  }
+  return b.price - a.price; // If tied, HIGHER price first (better condition)
+});
   
-  return sorted.slice(0, Math.max(limit, sorted.length));
-}
+return sorted.slice(0, limit);}
 
 function scoreClub(club, profile) {
   // NOTE: This function only scores clubs that already passed gender/handedness filters
@@ -284,69 +290,74 @@ function scoreClub(club, profile) {
   let score = 0;
   const handicapValue = parseHandicap(profile.handicap);
   
-  // ===================================
-  // PRIORITY 1: FLEX MATCH (Highest weight)
-  // ===================================
-  if (profile.flex) {
-    const hasMatchingFlex = checkFlexMatch(club, profile.flex);
-    if (hasMatchingFlex) {
-      score += 100; // Exact flex match requested by user - HIGHEST PRIORITY
-    }
-  } else if (profile.swingSpeed) {
-    const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
-    const hasMatchingFlex = checkFlexMatch(club, idealFlex);
-    if (hasMatchingFlex) {
-      score += 100; // Flex matches swing speed - HIGHEST PRIORITY
-    }
+// ===================================
+// PRIORITY 1: FLEX MATCH (Highest weight - 100 points)
+// ===================================
+if (profile.flex) {
+  const hasMatchingFlex = checkFlexMatch(club, profile.flex);
+  if (hasMatchingFlex) {
+    score += 100; // Exact flex match requested by user - HIGHEST PRIORITY
   }
-  
-  // ===================================
-  // PRIORITY 2: STYLE MATCH (Second priority)
-  // ===================================
-  let idealSkillTag = '';
-  if (handicapValue <= 10) {
-    idealSkillTag = 'Precision';
-  } else if (handicapValue <= 20) {
-    idealSkillTag = 'Control & Distance';
-  } else {
-    idealSkillTag = 'Forgiveness';
-  }
-  
-  const hasIdealSkill = club.tags.some(tag => 
-    tag.toLowerCase().includes(idealSkillTag.toLowerCase())
-  );
-  
-  if (hasIdealSkill) {
-    score += 50; // Perfect style match
-  } else {
-    const hasAnySkill = club.tags.some(tag => 
-      tag.toLowerCase().includes('forgiveness') ||
-      tag.toLowerCase().includes('precision') ||
-      tag.toLowerCase().includes('control')
-    );
-    if (hasAnySkill) {
-      score += 25; // Has some skill tag, but not ideal
-    } else {
-      score += 0; // No skill tags
-    }
-  }
-  
-  // ===================================
-  // PRIORITY 3: BRAND PREFERENCE (Third priority)
-  // ===================================
-if (profile.brandPreferences && profile.brandPreferences.length > 0) {
-  if (profile.brandPreferences.includes(club.brand)) {
-    score += 75; // User's preferred brand - VERY HIGH PRIORITY
+} else if (profile.swingSpeed) {
+  const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
+  const hasMatchingFlex = checkFlexMatch(club, idealFlex);
+  if (hasMatchingFlex) {
+    score += 100; // Flex matches swing speed - HIGHEST PRIORITY
   }
 }
-  
-  // ===================================
-  // PRICE (Tiebreaker - within budget only)
-  // ===================================
-  if (club.price <= profile.budget) {
-    const budgetUsageRatio = club.price / profile.budget;
-    score += Math.floor(budgetUsageRatio * 10); // 0-10 points based on price
+
+// ===================================
+// PRIORITY 2: SKILL LEVEL MATCH (Second priority - 75 points)
+// ===================================
+let idealSkillTag = '';
+if (handicapValue <= 10) {
+  idealSkillTag = 'Precision';
+} else if (handicapValue <= 20) {
+  idealSkillTag = 'Control & Distance';
+} else {
+  idealSkillTag = 'Forgiveness';
+}
+
+const hasIdealSkill = club.tags.some(tag => 
+  tag.toLowerCase().includes(idealSkillTag.toLowerCase())
+);
+
+if (hasIdealSkill) {
+  score += 75; // Perfect skill level match - SECOND PRIORITY
+} else {
+  const hasAnySkill = club.tags.some(tag => 
+    tag.toLowerCase().includes('forgiveness') ||
+    tag.toLowerCase().includes('precision') ||
+    tag.toLowerCase().includes('control')
+  );
+  if (hasAnySkill) {
+    score += 35; // Has some skill tag, but not ideal
   }
+}
+
+// ===================================
+// PRIORITY 3: BRAND PREFERENCE (Third priority - 50 points)
+// ===================================
+if (profile.brandPreferences && profile.brandPreferences.length > 0) {
+  const normalizedClubBrand = club.brand.trim().toLowerCase();
+  const matchesBrand = profile.brandPreferences.some(prefBrand => 
+    normalizedClubBrand === prefBrand.trim().toLowerCase() ||
+    normalizedClubBrand.includes(prefBrand.trim().toLowerCase())
+  );
+  
+  if (matchesBrand) {
+    score += 50; // User's preferred brand - THIRD PRIORITY
+  }
+}
+
+// ===================================
+// PRICE BONUS (Minor bonus for using budget - 0-10 points)
+// Only give bonus to items WITHIN budget
+// ===================================
+if (club.price <= profile.budget) {
+  const budgetUsageRatio = club.price / profile.budget;
+  score += Math.floor(budgetUsageRatio * 10); // 0-10 points based on price
+}
   
   // ===================================
   // GENDER MATCH (Minor bonus - already filtered, this is just a tiebreaker)
