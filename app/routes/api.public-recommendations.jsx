@@ -147,17 +147,22 @@ function getAcceptableLengths(height, category) {
   
   const heightInches = parseInt(height);
   
+  console.log(`\n🔍 Height filter check: ${heightInches}" for ${category}`);
+  
   if (category === 'Drivers') {
     // 5'5" (65") and under to 5'9" (69")
     if (heightInches <= 69) {
+      console.log(`  → Acceptable driver lengths: 44"-45"`);
       return ['44"', '44.25"', '44.5"', '44.75"', '45"'];
     }
     // 5'10" (70") to 6'2" (74")
     else if (heightInches >= 70 && heightInches <= 74) {
+      console.log(`  → Acceptable driver lengths: 44.5"-45.5"`);
       return ['44.5"', '44.75"', '45"', '45.25"', '45.5"'];
     }
     // 6'3" (75") to 6'4" (76") and up
     else if (heightInches >= 75) {
+      console.log(`  → Acceptable driver lengths: 45"-46"`);
       return ['45"', '45.25"', '45.5"', '45.75"', '46"'];
     }
   }
@@ -165,14 +170,17 @@ function getAcceptableLengths(height, category) {
   if (category === 'Iron Sets') {
     // 5'5" (65") and under to 5'9" (69")
     if (heightInches <= 69) {
+      console.log(`  → Acceptable iron lengths: -1" to Standard`);
       return ['-1"', '-0.75"', '-0.5"', '-0.25"', 'Standard', 'Standard Length'];
     }
     // 5'10" (70") to 6'2" (74")
     else if (heightInches >= 70 && heightInches <= 74) {
+      console.log(`  → Acceptable iron lengths: -0.5" to +0.5"`);
       return ['-0.5"', '-0.25"', 'Standard', 'Standard Length', '+0.25"', '+0.5"'];
     }
     // 6'3" (75") to 6'4" (76") and up
     else if (heightInches >= 75) {
+      console.log(`  → Acceptable iron lengths: Standard to +1"`);
       return ['Standard', 'Standard Length', '+0.25"', '+0.5"', '+0.75"', '+1"'];
     }
   }
@@ -186,17 +194,48 @@ function checkLengthMatch(product, acceptableLengths) {
   // Check both title and tags for length indicators
   const titleLower = product.title.toLowerCase();
   const tagsLower = product.tags.map(t => t.toLowerCase());
-  const allText = [...tagsLower, titleLower].join(' ');
+  const allText = [...tagsLower, titleLower].join(' | '); // Use separator for better matching
   
-  // Check if any acceptable length is present
-  return acceptableLengths.some(length => {
+  // For each acceptable length, check for matches
+  const hasMatch = acceptableLengths.some(length => {
     const lengthLower = length.toLowerCase();
-    // Check for exact matches or variations (e.g., "44" matches "44\"" or "44 inch")
-    return allText.includes(lengthLower) || 
-           allText.includes(length) ||
-           allText.includes(length.replace('"', '')) ||
-           allText.includes(length.replace('"', ' inch'));
+    const lengthNumeric = length.replace('"', '').replace('+', '\\+').replace('-', '\\-'); // Escape special chars
+    
+    // Multiple matching strategies:
+    // 1. Exact tag match (e.g., "44\"" or "Standard Length")
+    if (tagsLower.some(tag => tag === lengthLower || tag === length)) {
+      return true;
+    }
+    
+    // 2. Title contains the length
+    if (titleLower.includes(lengthLower)) {
+      return true;
+    }
+    
+    // 3. Match numeric length patterns (e.g., "44", "44.5", "+0.5")
+    // Look for the length as a standalone value
+    const patterns = [
+      new RegExp(`\\b${lengthNumeric}\\b`, 'i'),           // Exact word boundary match
+      new RegExp(`\\b${lengthNumeric}"`, 'i'),              // With quote
+      new RegExp(`\\b${lengthNumeric}\\s*inch`, 'i'),      // With "inch"
+      new RegExp(`\\b${lengthNumeric}\\s*in\\b`, 'i'),     // With "in"
+    ];
+    
+    if (patterns.some(pattern => pattern.test(allText))) {
+      return true;
+    }
+    
+    // 4. Special handling for "Standard" - very common
+    if (lengthLower === 'standard' || lengthLower === 'standard length') {
+      if (allText.includes('standard length') || allText.includes('standard')) {
+        return true;
+      }
+    }
+    
+    return false;
   });
+  
+  return hasMatch;
 }
 
 function findBestMatches(products, categoryTag, profile, limit = 12) {
@@ -305,17 +344,21 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
     }
 
     // HARD FILTER #4: HEIGHT/LENGTH - Only for Drivers and Iron Sets
-    if (categoryTag === 'Drivers' || categoryTag === 'Iron Sets') {
-      const acceptableLengths = getAcceptableLengths(profile.height, categoryTag);
-      
-      if (acceptableLengths) {
-        const lengthMatch = checkLengthMatch(p, acceptableLengths);
-        
-        if (!lengthMatch) {
-          return false; // Wrong length for height, ELIMINATED
-        }
-      }
+    // HARD FILTER #4: HEIGHT/LENGTH - Only for Drivers and Iron Sets AND only for males
+if ((categoryTag === 'Drivers' || categoryTag === 'Iron Sets') && profile.gender === 'male') {
+  const acceptableLengths = getAcceptableLengths(profile.height, categoryTag);
+  
+  if (acceptableLengths) {
+    const lengthMatch = checkLengthMatch(p, acceptableLengths);
+    
+    if (!lengthMatch) {
+      console.log(`❌ Height filter eliminated: ${p.title} - looking for ${acceptableLengths.join(', ')}`);
+      return false; // Wrong length for height, ELIMINATED
+    } else {
+      console.log(`✅ Height filter passed: ${p.title}`);
     }
+  }
+}
 
     // Only clubs that pass ALL filters reach this point
     return hasCategory && inStock;
