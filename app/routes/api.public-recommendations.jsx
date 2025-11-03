@@ -93,11 +93,11 @@ export async function action({ request }) {
     console.log(`📊 Category breakdown:`, breakdown);
 
     const budgetAllocation = {
-      driver: budget * 0.30,
-      woods: budget * 0.15,
-      hybrids: budget * 0.10,
-      irons: budget * 0.40,
-      wedges: budget * 0.15,
+      driver: budget * 0.35,
+      woods: budget * 0.20,
+      hybrids: budget * 0.15,
+      irons: budget * 0.45,
+      wedges: budget * 0.25,
       putter: budget * 0.20,
     };
 
@@ -354,8 +354,8 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
       genderMatch = true; // Show all for now
     }
     
-    // Additional flex-based gender filtering for edge cases
-    if (profile.flex === 'stiff' || profile.flex === 'extra-stiff') {
+    // Additional flex-based gender filtering for edge cases (NOT for wedges)
+    if (categoryTag !== 'Wedges' && (profile.flex === 'stiff' || profile.flex === 'extra-stiff')) {
       // Stiff/X-Stiff flex users should NEVER see ladies flex - ELIMINATED
       const hasLadiesFlex = titleLower.includes("women's flex") || 
                            titleLower.includes("ladies flex") ||
@@ -377,22 +377,21 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
       return false; // Over budget, ELIMINATED
     }
 
-    // HARD FILTER #4: HEIGHT/LENGTH - Only for Drivers and Iron Sets
     // HARD FILTER #4: HEIGHT/LENGTH - Only for Drivers and Iron Sets AND only for males
-if ((categoryTag === 'Drivers' || categoryTag === 'Iron Sets') && profile.gender === 'male') {
-  const acceptableLengths = getAcceptableLengths(profile.height, categoryTag);
-  
-  if (acceptableLengths) {
-    const lengthMatch = checkLengthMatch(p, acceptableLengths);
-    
-    if (!lengthMatch) {
-      console.log(`❌ Height filter eliminated: ${p.title} - looking for ${acceptableLengths.join(', ')}`);
-      return false; // Wrong length for height, ELIMINATED
-    } else {
-      console.log(`✅ Height filter passed: ${p.title}`);
+    if ((categoryTag === 'Drivers' || categoryTag === 'Iron Sets') && profile.gender === 'male') {
+      const acceptableLengths = getAcceptableLengths(profile.height, categoryTag);
+      
+      if (acceptableLengths) {
+        const lengthMatch = checkLengthMatch(p, acceptableLengths);
+        
+        if (!lengthMatch) {
+          console.log(`❌ Height filter eliminated: ${p.title} - looking for ${acceptableLengths.join(', ')}`);
+          return false; // Wrong length for height, ELIMINATED
+        } else {
+          console.log(`✅ Height filter passed: ${p.title}`);
+        }
+      }
     }
-  }
-}
 
     // Only clubs that pass ALL filters reach this point
     return hasCategory && inStock;
@@ -404,11 +403,11 @@ if ((categoryTag === 'Drivers' || categoryTag === 'Iron Sets') && profile.gender
   // ========================================================================
   
   const scored = filtered.map(club => {
-    const score = scoreClub(club, profile);
+    const score = scoreClub(club, profile, categoryTag);
     return {
       ...club,
       score: score,
-      matchReason: generateMatchReason(club, profile, score)
+      matchReason: generateMatchReason(club, profile, score, categoryTag)
     };
   });
 
@@ -423,7 +422,7 @@ if ((categoryTag === 'Drivers' || categoryTag === 'Iron Sets') && profile.gender
   return sorted.slice(0, limit);
 }
 
-function scoreClub(club, profile) {
+function scoreClub(club, profile, categoryTag) {
   // NOTE: This function only scores clubs that already passed gender/handedness filters
   // Gender and handedness mismatches have already been ELIMINATED
   
@@ -432,46 +431,52 @@ function scoreClub(club, profile) {
   
   // ===================================
   // PRIORITY 1: FLEX MATCH (Highest weight - 100 points)
+  // SKIP FOR WEDGES - Wedges don't need flex matching
   // ===================================
-  if (profile.flex) {
-    const hasMatchingFlex = checkFlexMatch(club, profile.flex);
-    if (hasMatchingFlex) {
-      score += 100; // Exact flex match requested by user - HIGHEST PRIORITY
-    }
-  } else if (profile.swingSpeed) {
-    const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
-    const hasMatchingFlex = checkFlexMatch(club, idealFlex);
-    if (hasMatchingFlex) {
-      score += 100; // Flex matches swing speed - HIGHEST PRIORITY
+  if (categoryTag !== 'Wedges') {
+    if (profile.flex) {
+      const hasMatchingFlex = checkFlexMatch(club, profile.flex);
+      if (hasMatchingFlex) {
+        score += 100; // Exact flex match requested by user - HIGHEST PRIORITY
+      }
+    } else if (profile.swingSpeed) {
+      const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
+      const hasMatchingFlex = checkFlexMatch(club, idealFlex);
+      if (hasMatchingFlex) {
+        score += 100; // Flex matches swing speed - HIGHEST PRIORITY
+      }
     }
   }
 
   // ===================================
   // PRIORITY 2: SKILL LEVEL MATCH (Second priority - 75 points)
+  // SKIP FOR WEDGES - Wedges don't need skill level matching
   // ===================================
-  let idealSkillTag = '';
-  if (handicapValue <= 10) {
-    idealSkillTag = 'Precision';
-  } else if (handicapValue <= 20) {
-    idealSkillTag = 'Control & Distance';
-  } else {
-    idealSkillTag = 'Forgiveness';
-  }
+  if (categoryTag !== 'Wedges') {
+    let idealSkillTag = '';
+    if (handicapValue <= 10) {
+      idealSkillTag = 'Precision';
+    } else if (handicapValue <= 20) {
+      idealSkillTag = 'Control & Distance';
+    } else {
+      idealSkillTag = 'Forgiveness';
+    }
 
-  const hasIdealSkill = club.tags.some(tag => 
-    tag.toLowerCase().includes(idealSkillTag.toLowerCase())
-  );
-
-  if (hasIdealSkill) {
-    score += 75; // Perfect skill level match - SECOND PRIORITY
-  } else {
-    const hasAnySkill = club.tags.some(tag => 
-      tag.toLowerCase().includes('forgiveness') ||
-      tag.toLowerCase().includes('precision') ||
-      tag.toLowerCase().includes('control')
+    const hasIdealSkill = club.tags.some(tag => 
+      tag.toLowerCase().includes(idealSkillTag.toLowerCase())
     );
-    if (hasAnySkill) {
-      score += 35; // Has some skill tag, but not ideal
+
+    if (hasIdealSkill) {
+      score += 75; // Perfect skill level match - SECOND PRIORITY
+    } else {
+      const hasAnySkill = club.tags.some(tag => 
+        tag.toLowerCase().includes('forgiveness') ||
+        tag.toLowerCase().includes('precision') ||
+        tag.toLowerCase().includes('control')
+      );
+      if (hasAnySkill) {
+        score += 35; // Has some skill tag, but not ideal
+      }
     }
   }
 
@@ -588,31 +593,35 @@ function getIdealFlexFromSpeed(swingSpeed) {
   return speedMap[swingSpeed.toLowerCase()] || 'regular';
 }
 
-function generateMatchReason(club, profile, score) {
+function generateMatchReason(club, profile, score, categoryTag) {
   const reasons = [];
   const handicapValue = parseHandicap(profile.handicap);
   
-  // Show flex match first since it's priority #1
-  if (profile.flex) {
-    const hasMatchingFlex = checkFlexMatch(club, profile.flex);
-    if (hasMatchingFlex) {
-      reasons.push("Perfect flex");
-    }
-  } else if (profile.swingSpeed) {
-    const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
-    const hasMatchingFlex = checkFlexMatch(club, idealFlex);
-    if (hasMatchingFlex) {
-      reasons.push("Right flex");
+  // Show flex match first since it's priority #1 (SKIP for wedges)
+  if (categoryTag !== 'Wedges') {
+    if (profile.flex) {
+      const hasMatchingFlex = checkFlexMatch(club, profile.flex);
+      if (hasMatchingFlex) {
+        reasons.push("Perfect flex");
+      }
+    } else if (profile.swingSpeed) {
+      const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
+      const hasMatchingFlex = checkFlexMatch(club, idealFlex);
+      if (hasMatchingFlex) {
+        reasons.push("Right flex");
+      }
     }
   }
   
-  // Then show skill level match
-  if (handicapValue <= 10 && club.tags.some(tag => tag.toLowerCase().includes('precision'))) {
-    reasons.push("Tour-level precision");
-  } else if (handicapValue > 10 && handicapValue <= 20 && club.tags.some(tag => tag.toLowerCase().includes('control'))) {
-    reasons.push("Great control & distance");
-  } else if (handicapValue > 20 && club.tags.some(tag => tag.toLowerCase().includes('forgiveness'))) {
-    reasons.push("Maximum forgiveness");
+  // Then show skill level match (SKIP for wedges)
+  if (categoryTag !== 'Wedges') {
+    if (handicapValue <= 10 && club.tags.some(tag => tag.toLowerCase().includes('precision'))) {
+      reasons.push("Tour-level precision");
+    } else if (handicapValue > 10 && handicapValue <= 20 && club.tags.some(tag => tag.toLowerCase().includes('control'))) {
+      reasons.push("Great control & distance");
+    } else if (handicapValue > 20 && club.tags.some(tag => tag.toLowerCase().includes('forgiveness'))) {
+      reasons.push("Maximum forgiveness");
+    }
   }
   
   if (club.price <= profile.budget * 0.9) {
