@@ -1,4 +1,5 @@
-const cron = require('node-cron');
+import cron from 'node-cron';
+import fetch from 'node-fetch';
 
 const SYNC_URL = process.env.APP_URL || 'https://respectful-analysis-production.up.railway.app';
 
