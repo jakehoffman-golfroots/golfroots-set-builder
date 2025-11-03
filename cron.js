@@ -19,7 +19,10 @@ cron.schedule('*/15 * * * *', async () => {
     
     if (response.ok) {
       const data = await response.json();
-      console.log('✅ Sync completed successfully - Synced', data.syncedCount || 0, 'products');
+      console.log('✅ Sync completed successfully - Synced', data.totalProducts || 0, 'products');
+      if (data.breakdown) {
+        console.log('📊 Breakdown:', data.breakdown);
+      }
     } else {
       const errorText = await response.text();
       console.error('❌ Sync failed:', response.status, errorText);
@@ -36,7 +39,12 @@ fetch(`${SYNC_URL}/api/sync-products`, {
   headers: { 'Content-Type': 'application/json' }
 })
   .then(res => res.json())
-  .then(data => console.log('✅ Initial sync completed:', data.syncedCount || 0, 'products synced'))
+  .then(data => {
+    console.log('✅ Initial sync completed:', data.totalProducts || 0, 'products synced');
+    if (data.breakdown) {
+      console.log('📊 Breakdown:', data.breakdown);
+    }
+  })
   .catch(err => console.error('❌ Initial sync failed:', err.message));
 
 // Keep the process alive
