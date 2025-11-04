@@ -348,7 +348,7 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
       genderMatch = !isExplicitlyWomens;
     } else if (profile.gender === 'female') {
       // For women: Show women's items, or unisex if they exist
-      genderMatch = isExplicitlyWomens || (!isExplicitlyMens && !isExplicitlyWomens);
+  genderMatch = isWomens;
     } else if (profile.gender === 'unisex') {
       // For unisex: Show everything except explicitly gendered
       genderMatch = true; // Show all for now
