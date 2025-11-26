@@ -73,10 +73,24 @@ export async function action({ request }) {
     }
 
     // Filter for valid golf clubs
-    const validCategories = ['Drivers', 'Woods', 'Hybrids', 'Iron Sets', 'Wedges', 'Putters'];
-    const products = allProducts.filter(p =>
-      p.tags.some(tag => validCategories.includes(tag))
-    );
+// Filter for valid golf clubs - EXCLUDE headcovers and accessories
+const validCategories = ['Drivers', 'Woods', 'Hybrids', 'Iron Sets', 'Wedges', 'Putters'];
+const products = allProducts.filter(p => {
+  // Must have a valid category tag
+  const hasValidCategory = p.tags.some(tag => validCategories.includes(tag));
+  
+  // Exclude headcovers and accessories
+  const isHeadcover = p.productType?.toLowerCase().includes('headcover') ||
+                     p.productType?.toLowerCase().includes('head cover') ||
+                     p.title.toLowerCase().includes('headcover') ||
+                     p.title.toLowerCase().includes('head cover') ||
+                     p.tags.some(tag => tag.toLowerCase().includes('headcover')) ||
+                     p.tags.some(tag => tag.toLowerCase().includes('head cover')) ||
+                     p.tags.some(tag => tag.toLowerCase() === 'accessories') ||
+                     p.tags.some(tag => tag.toLowerCase() === 'covers');
+  
+  return hasValidCategory && !isHeadcover;
+});
 
     console.log(`📊 Total golf clubs with inventory: ${products.length}`);
 
@@ -281,6 +295,17 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
   const filtered = products.filter(p => {
     const hasCategory = p.tags.includes(categoryTag);
     const inStock = p.inventory > 0;
+
+        const isHeadcover = p.productType?.toLowerCase().includes('headcover') ||
+                       p.productType?.toLowerCase().includes('head cover') ||
+                       p.title.toLowerCase().includes('headcover') ||
+                       p.title.toLowerCase().includes('head cover') ||
+                       p.tags.some(tag => tag.toLowerCase().includes('headcover')) ||
+                       p.tags.some(tag => tag.toLowerCase().includes('head cover'));
+    
+    if (isHeadcover) {
+      return false; // ELIMINATE headcovers immediately
+    }
     
     // SPECIAL FILTER: For Wedges category, ONLY show Sand Wedges
     if (categoryTag === 'Wedges') {
