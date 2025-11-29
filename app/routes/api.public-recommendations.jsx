@@ -60,17 +60,17 @@ export async function action({ request }) {
       const titleLower = p.title.toLowerCase();
       const productTypeLower = p.productType?.toLowerCase() || '';
       
-      // CRITICAL: Exclude shafts - these are NOT complete clubs
-      const isShaft = productTypeLower.includes('shaft') ||
-                      productTypeLower.includes('shafts') ||
-                      titleLower.includes(' shaft ') ||
-                      titleLower.includes(' shafts ') ||
-                      titleLower.startsWith('shaft ') ||
-                      titleLower.startsWith('shafts ') ||
-                      titleLower.endsWith(' shaft') ||
-                      titleLower.endsWith(' shafts') ||
-                      p.tags.some(tag => tag.toLowerCase() === 'shafts') ||
-                      p.tags.some(tag => tag.toLowerCase() === 'shaft');
+      // CRITICAL: Exclude STANDALONE shafts only (not complete clubs that mention shaft specs)
+      // Only exclude if it's JUST a shaft product, not a complete club
+      const isStandaloneShaft = (
+        // ProductType is specifically "Shaft" or "Shafts"
+        (productTypeLower === 'shaft' || productTypeLower === 'shafts') ||
+        // Title starts with "Shaft" (like "Shaft - Project X")
+        titleLower.startsWith('shaft ') ||
+        titleLower.startsWith('shafts ') ||
+        // Has shaft tag but NO valid club category
+        (p.tags.some(tag => tag.toLowerCase() === 'shafts' || tag.toLowerCase() === 'shaft') && !hasValidCategory)
+      );
       
       // CRITICAL: Exclude headcovers
       const isHeadcover = productTypeLower.includes('headcover') ||
@@ -80,12 +80,15 @@ export async function action({ request }) {
                          p.tags.some(tag => tag.toLowerCase().includes('headcover')) ||
                          p.tags.some(tag => tag.toLowerCase().includes('head cover'));
       
-      // CRITICAL: Exclude accessories
-      const isAccessory = p.tags.some(tag => tag.toLowerCase() === 'accessories') ||
-                         p.tags.some(tag => tag.toLowerCase() === 'covers') ||
-                         productTypeLower === 'accessories';
+      // CRITICAL: Exclude accessories (but NOT if it also has a valid club category)
+      const isAccessoryOnly = (
+        (p.tags.some(tag => tag.toLowerCase() === 'accessories') ||
+         p.tags.some(tag => tag.toLowerCase() === 'covers') ||
+         productTypeLower === 'accessories') &&
+        !hasValidCategory
+      );
       
-      return hasValidCategory && !isShaft && !isHeadcover && !isAccessory;
+      return hasValidCategory && !isStandaloneShaft && !isHeadcover && !isAccessoryOnly;
     });
 
     console.log(`📊 Total golf clubs with inventory: ${products.length}`);
@@ -164,20 +167,16 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
     const titleLower = p.title.toLowerCase();
     const productTypeLower = p.productType?.toLowerCase() || '';
     
-    // CRITICAL: Exclude shafts - these are NOT complete clubs
-    const isShaft = productTypeLower.includes('shaft') ||
-                    productTypeLower.includes('shafts') ||
-                    titleLower.includes(' shaft ') ||
-                    titleLower.includes(' shafts ') ||
-                    titleLower.startsWith('shaft ') ||
-                    titleLower.startsWith('shafts ') ||
-                    titleLower.endsWith(' shaft') ||
-                    titleLower.endsWith(' shafts') ||
-                    p.tags.some(tag => tag.toLowerCase() === 'shafts') ||
-                    p.tags.some(tag => tag.toLowerCase() === 'shaft');
+    // CRITICAL: Exclude STANDALONE shafts only (not complete clubs that mention shaft specs)
+    const isStandaloneShaft = (
+      (productTypeLower === 'shaft' || productTypeLower === 'shafts') ||
+      titleLower.startsWith('shaft ') ||
+      titleLower.startsWith('shafts ') ||
+      (p.tags.some(tag => tag.toLowerCase() === 'shafts' || tag.toLowerCase() === 'shaft') && !hasCategory)
+    );
     
-    if (isShaft) {
-      return false; // ELIMINATE shafts immediately
+    if (isStandaloneShaft) {
+      return false; // ELIMINATE standalone shafts
     }
     
     // CRITICAL: Exclude headcovers
