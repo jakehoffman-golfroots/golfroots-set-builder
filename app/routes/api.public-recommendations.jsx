@@ -243,10 +243,23 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
     }
     
     // Additional flex-based gender filtering for edge cases
-    if (profile.flex === 'stiff' || profile.flex === 'extra-stiff') {
+    // Skip flex filtering for wedges UNLESS it's women's flex
+    if (categoryTag !== 'Wedges' && (profile.flex === 'stiff' || profile.flex === 'extra-stiff')) {
       // Stiff/X-Stiff flex users should NEVER see ladies flex - ELIMINATED
       const hasLadiesFlex = titleLower.includes("women's flex") || 
                            titleLower.includes("ladies flex") ||
+                           tagsLower.some(tag => tag.includes("ladies flex"));
+      if (hasLadiesFlex) {
+        genderMatch = false;
+      }
+    }
+    
+    // For wedges, ONLY filter out ladies flex if gender is male (not based on flex preference)
+    if (categoryTag === 'Wedges' && profile.gender === 'male') {
+      const hasLadiesFlex = titleLower.includes("women's flex") || 
+                           titleLower.includes("ladies flex") ||
+                           titleLower.includes("women") ||
+                           titleLower.includes("ladies") ||
                            tagsLower.some(tag => tag.includes("ladies flex"));
       if (hasLadiesFlex) {
         genderMatch = false;
@@ -273,11 +286,11 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
   // ========================================================================
   
   const scored = filtered.map(club => {
-    const score = scoreClub(club, profile);
+    const score = scoreClub(club, profile, categoryTag);
     return {
       ...club,
       score: score,
-      matchReason: generateMatchReason(club, profile, score)
+      matchReason: generateMatchReason(club, profile, score, categoryTag)
     };
   });
 
@@ -292,31 +305,39 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
   return sorted.slice(0, limit);
 }
 
-function scoreClub(club, profile) {
+function scoreClub(club, profile, categoryTag) {
   let score = 0;
   const handicapValue = parseHandicap(profile.handicap);
   
   // PRIORITY #1: FLEX MATCHING (50 points max)
-  if (profile.flex) {
-    const requestedFlexTags = getFlexTagsFromPreference(profile.flex);
-    const hasMatchingFlex = club.tags.some(tag => 
-      requestedFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
-    );
-    
-    if (hasMatchingFlex) {
-      score += 50; // Perfect flex match
+  // Skip flex scoring for wedges unless it's a women's wedge scenario
+  const shouldScoreFlex = categoryTag !== 'Wedges' || profile.gender === 'female';
+  
+  if (shouldScoreFlex) {
+    if (profile.flex) {
+      const requestedFlexTags = getFlexTagsFromPreference(profile.flex);
+      const hasMatchingFlex = club.tags.some(tag => 
+        requestedFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
+      );
+      
+      if (hasMatchingFlex) {
+        score += 50; // Perfect flex match
+      }
+    } else if (profile.swingSpeed) {
+      const idealFlexTags = getIdealFlexTags(profile.swingSpeed);
+      const hasIdealFlex = club.tags.some(tag => 
+        idealFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
+      );
+      
+      if (hasIdealFlex) {
+        score += 50; // Ideal flex for swing speed
+      } else {
+        score += 15; // No flex match, but not disqualifying
+      }
     }
-  } else if (profile.swingSpeed) {
-    const idealFlexTags = getIdealFlexTags(profile.swingSpeed);
-    const hasIdealFlex = club.tags.some(tag => 
-      idealFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
-    );
-    
-    if (hasIdealFlex) {
-      score += 50; // Ideal flex for swing speed
-    } else {
-      score += 15; // No flex match, but not disqualifying
-    }
+  } else {
+    // For wedges (non-women's), give neutral flex score since flex doesn't matter
+    score += 25; // Neutral score - don't penalize wedges for not having flex options
   }
   
   // PRIORITY #2: SKILL LEVEL (40 points max)
@@ -420,24 +441,28 @@ function getFlexTagsFromPreference(flexPreference) {
   return flexMap[flexPreference.toLowerCase()] || ['flex_regular'];
 }
 
-function generateMatchReason(club, profile, score) {
+function generateMatchReason(club, profile, score, categoryTag) {
   const reasons = [];
   const handicapValue = parseHandicap(profile.handicap);
   
-  // Prioritize flex matching in reasons
-  if (profile.flex) {
-    const requestedFlexTags = getFlexTagsFromPreference(profile.flex);
-    if (club.tags.some(tag => 
-      requestedFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
-    )) {
-      reasons.push("Perfect flex match");
-    }
-  } else if (profile.swingSpeed) {
-    const idealFlexTags = getIdealFlexTags(profile.swingSpeed);
-    if (club.tags.some(tag => 
-      idealFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
-    )) {
-      reasons.push("Ideal flex for your speed");
+  // Prioritize flex matching in reasons (but skip for wedges unless women's)
+  const shouldMentionFlex = categoryTag !== 'Wedges' || profile.gender === 'female';
+  
+  if (shouldMentionFlex) {
+    if (profile.flex) {
+      const requestedFlexTags = getFlexTagsFromPreference(profile.flex);
+      if (club.tags.some(tag => 
+        requestedFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
+      )) {
+        reasons.push("Perfect flex match");
+      }
+    } else if (profile.swingSpeed) {
+      const idealFlexTags = getIdealFlexTags(profile.swingSpeed);
+      if (club.tags.some(tag => 
+        idealFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
+      )) {
+        reasons.push("Ideal flex for your speed");
+      }
     }
   }
   
