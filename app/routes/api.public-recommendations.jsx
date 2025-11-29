@@ -57,38 +57,25 @@ export async function action({ request }) {
     const products = allProducts.filter(p => {
       const hasValidCategory = p.tags.some(tag => validCategories.includes(tag));
       
+      // If it doesn't have a valid club category, exclude it
+      if (!hasValidCategory) {
+        return false;
+      }
+      
       const titleLower = p.title.toLowerCase();
       const productTypeLower = p.productType?.toLowerCase() || '';
       
-      // CRITICAL: Exclude STANDALONE shafts only (not complete clubs that mention shaft specs)
-      // Only exclude if it's JUST a shaft product, not a complete club
-      const isStandaloneShaft = (
-        // ProductType is specifically "Shaft" or "Shafts"
-        (productTypeLower === 'shaft' || productTypeLower === 'shafts') ||
-        // Title starts with "Shaft" (like "Shaft - Project X")
-        titleLower.startsWith('shaft ') ||
-        titleLower.startsWith('shafts ') ||
-        // Has shaft tag but NO valid club category
-        (p.tags.some(tag => tag.toLowerCase() === 'shafts' || tag.toLowerCase() === 'shaft') && !hasValidCategory)
-      );
+      // Only exclude if productType is explicitly "Shaft" or "Shafts"
+      // (Complete clubs may mention shaft in title but won't have productType = "Shaft")
+      const isStandaloneShaft = (productTypeLower === 'shaft' || productTypeLower === 'shafts');
       
-      // CRITICAL: Exclude headcovers
+      // Exclude headcovers
       const isHeadcover = productTypeLower.includes('headcover') ||
                          productTypeLower.includes('head cover') ||
                          titleLower.includes('headcover') ||
-                         titleLower.includes('head cover') ||
-                         p.tags.some(tag => tag.toLowerCase().includes('headcover')) ||
-                         p.tags.some(tag => tag.toLowerCase().includes('head cover'));
+                         titleLower.includes('head cover');
       
-      // CRITICAL: Exclude accessories (but NOT if it also has a valid club category)
-      const isAccessoryOnly = (
-        (p.tags.some(tag => tag.toLowerCase() === 'accessories') ||
-         p.tags.some(tag => tag.toLowerCase() === 'covers') ||
-         productTypeLower === 'accessories') &&
-        !hasValidCategory
-      );
-      
-      return hasValidCategory && !isStandaloneShaft && !isHeadcover && !isAccessoryOnly;
+      return !isStandaloneShaft && !isHeadcover;
     });
 
     console.log(`📊 Total golf clubs with inventory: ${products.length}`);
@@ -155,6 +142,9 @@ export async function action({ request }) {
 }
 
 function findBestMatches(products, categoryTag, profile, limit = 12) {
+  console.log(`\n🔍 Finding matches for ${categoryTag}...`);
+  console.log(`  Starting with ${products.filter(p => p.tags.includes(categoryTag)).length} products in this category`);
+  
   // ========================================================================
   // FILTERING PHASE - These filters ELIMINATE clubs entirely before scoring
   // Wrong gender, handedness, shafts, or headcovers = NEVER shown
@@ -167,27 +157,22 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
     const titleLower = p.title.toLowerCase();
     const productTypeLower = p.productType?.toLowerCase() || '';
     
-    // CRITICAL: Exclude STANDALONE shafts only (not complete clubs that mention shaft specs)
-    const isStandaloneShaft = (
-      (productTypeLower === 'shaft' || productTypeLower === 'shafts') ||
-      titleLower.startsWith('shaft ') ||
-      titleLower.startsWith('shafts ') ||
-      (p.tags.some(tag => tag.toLowerCase() === 'shafts' || tag.toLowerCase() === 'shaft') && !hasCategory)
-    );
+    // Only exclude if productType is explicitly "Shaft" or "Shafts"
+    const isStandaloneShaft = (productTypeLower === 'shaft' || productTypeLower === 'shafts');
     
     if (isStandaloneShaft) {
-      return false; // ELIMINATE standalone shafts
+      console.log(`  ❌ Excluded shaft: ${p.title}`);
+      return false;
     }
     
     // CRITICAL: Exclude headcovers
     const isHeadcover = productTypeLower.includes('headcover') ||
                        productTypeLower.includes('head cover') ||
                        titleLower.includes('headcover') ||
-                       titleLower.includes('head cover') ||
-                       p.tags.some(tag => tag.toLowerCase().includes('headcover'));
+                       titleLower.includes('head cover');
     
     if (isHeadcover) {
-      return false; // ELIMINATE headcovers
+      return false;
     }
     
     // SPECIAL FILTER: For Wedges category, ONLY show Sand Wedges
@@ -276,6 +261,11 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
     // Only clubs that pass ALL filters reach this point
     return hasCategory && inStock;
   });
+
+  console.log(`  ✅ After all filters: ${filtered.length} products remain`);
+  if (filtered.length > 0) {
+    console.log(`  Example products: ${filtered.slice(0, 3).map(p => p.title).join(', ')}`);
+  }
 
   // ========================================================================
   // SCORING PHASE - Only clubs that passed ALL filters are scored here
