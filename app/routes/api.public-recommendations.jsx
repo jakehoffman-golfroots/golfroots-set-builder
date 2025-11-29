@@ -316,23 +316,44 @@ function scoreClub(club, profile, categoryTag) {
   if (shouldScoreFlex) {
     if (profile.flex) {
       const requestedFlexTags = getFlexTagsFromPreference(profile.flex);
-      const hasMatchingFlex = club.tags.some(tag => 
-        requestedFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
-      );
+      const hasMatchingFlex = club.tags.some(tag => {
+        const tagLower = tag.toLowerCase();
+        return requestedFlexTags.some(flexTag => {
+          const flexTagLower = flexTag.toLowerCase();
+          // Exact match or word boundary match to avoid "stiff" matching "x stiff"
+          if (tagLower === flexTagLower) return true;
+          // For "Stiff Flex" style tags, make sure it's not "X Stiff Flex"
+          if (flexTagLower.includes('stiff') && !flexTagLower.includes('x ') && !flexTagLower.includes('extra')) {
+            // This is regular stiff - make sure tag doesn't have X/Extra
+            return tagLower.includes(flexTagLower) && !tagLower.includes('x stiff') && !tagLower.includes('extra stiff');
+          }
+          return tagLower === flexTagLower;
+        });
+      });
       
       if (hasMatchingFlex) {
         score += 50; // Perfect flex match
+      } else {
+        score += 0; // Wrong flex = significant penalty
       }
     } else if (profile.swingSpeed) {
       const idealFlexTags = getIdealFlexTags(profile.swingSpeed);
-      const hasIdealFlex = club.tags.some(tag => 
-        idealFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
-      );
+      const hasIdealFlex = club.tags.some(tag => {
+        const tagLower = tag.toLowerCase();
+        return idealFlexTags.some(flexTag => {
+          const flexTagLower = flexTag.toLowerCase();
+          if (tagLower === flexTagLower) return true;
+          if (flexTagLower.includes('stiff') && !flexTagLower.includes('x ') && !flexTagLower.includes('extra')) {
+            return tagLower.includes(flexTagLower) && !tagLower.includes('x stiff') && !tagLower.includes('extra stiff');
+          }
+          return tagLower === flexTagLower;
+        });
+      });
       
       if (hasIdealFlex) {
         score += 50; // Ideal flex for swing speed
       } else {
-        score += 15; // No flex match, but not disqualifying
+        score += 0; // Wrong flex = significant penalty
       }
     }
   } else {
@@ -341,52 +362,72 @@ function scoreClub(club, profile, categoryTag) {
   }
   
   // PRIORITY #2: SKILL LEVEL (40 points max)
-  let idealSkillTag = '';
-  if (handicapValue <= 10) {
-    idealSkillTag = 'Precision';
-  } else if (handicapValue <= 20) {
-    idealSkillTag = 'Control & Distance';
-  } else {
-    idealSkillTag = 'Forgiveness';
-  }
-  
-  const hasIdealSkill = club.tags.some(tag => 
-    tag.toLowerCase().includes(idealSkillTag.toLowerCase())
-  );
-  
-  if (hasIdealSkill) {
-    score += 40; // Perfect skill match
-  } else {
-    const hasAnySkill = club.tags.some(tag => 
-      tag.toLowerCase().includes('forgiveness') ||
-      tag.toLowerCase().includes('precision') ||
-      tag.toLowerCase().includes('control')
-    );
-    if (hasAnySkill) {
-      score += 20; // Has a skill tag, just not ideal
+  // Skip skill level scoring for wedges - forgiveness doesn't matter for wedges
+  if (categoryTag !== 'Wedges') {
+    let idealSkillTag = '';
+    if (handicapValue <= 10) {
+      idealSkillTag = 'Precision';
+    } else if (handicapValue <= 20) {
+      idealSkillTag = 'Control & Distance';
     } else {
-      score += 15; // No skill tags
+      idealSkillTag = 'Forgiveness';
     }
+    
+    const hasIdealSkill = club.tags.some(tag => 
+      tag.toLowerCase().includes(idealSkillTag.toLowerCase())
+    );
+    
+    if (hasIdealSkill) {
+      score += 40; // Perfect skill match
+    } else {
+      const hasAnySkill = club.tags.some(tag => 
+        tag.toLowerCase().includes('forgiveness') ||
+        tag.toLowerCase().includes('precision') ||
+        tag.toLowerCase().includes('control')
+      );
+      if (hasAnySkill) {
+        score += 20; // Has a skill tag, just not ideal
+      } else {
+        score += 15; // No skill tags
+      }
+    }
+  } else {
+    // For wedges, give neutral skill score - forgiveness doesn't apply
+    score += 20;
   }
   
-  // PRIORITY #3: PRICE FIT (30 points max)
+  // PRIORITY #3: PRICE FIT (30 points max, 40 for wedges)
+  const pricePoints = categoryTag === 'Wedges' ? 40 : 30;
+  
   if (club.price <= profile.budget) {
     const priceRatio = club.price / profile.budget;
     if (priceRatio >= 0.7) {
-      score += 30; // Premium option within budget
+      score += pricePoints; // Premium option within budget
     } else if (priceRatio >= 0.5) {
-      score += 25; // Mid-range option
+      score += Math.floor(pricePoints * 0.8); // Mid-range option
+    } else if (priceRatio >= 0.3) {
+      score += Math.floor(pricePoints * 0.6); // Budget option
     } else {
-      score += 20; // Budget option
+      score += Math.floor(pricePoints * 0.3); // Very cheap - penalize for wedges
     }
   } else if (club.price <= profile.budget * 1.15) {
-    score += 10; // Slightly over budget but close
+    score += Math.floor(pricePoints * 0.3); // Slightly over budget
   }
   
-  // PRIORITY #4: BRAND PREFERENCE (15 points)
+  // PRIORITY #4: BRAND PREFERENCE (15 points, 25 for wedges)
+  const brandPoints = categoryTag === 'Wedges' ? 25 : 15;
+  
   if (profile.brandPreferences && profile.brandPreferences.length > 0) {
     if (profile.brandPreferences.includes(club.brand)) {
-      score += 15;
+      score += brandPoints;
+    }
+  } else {
+    // If no brand preference specified, boost well-known brands for wedges
+    if (categoryTag === 'Wedges') {
+      const premiumBrands = ['Titleist', 'Callaway', 'TaylorMade', 'Ping', 'Cleveland', 'Mizuno', 'Vokey'];
+      if (premiumBrands.includes(club.brand)) {
+        score += Math.floor(brandPoints * 0.6); // Bonus for premium brands
+      }
     }
   }
   
@@ -466,13 +507,15 @@ function generateMatchReason(club, profile, score, categoryTag) {
     }
   }
   
-  // Then skill level
-  if (handicapValue <= 10 && club.tags.some(tag => tag.toLowerCase().includes('precision'))) {
-    reasons.push("Tour-level precision");
-  } else if (handicapValue > 10 && handicapValue <= 20 && club.tags.some(tag => tag.toLowerCase().includes('control'))) {
-    reasons.push("Great control & distance");
-  } else if (handicapValue > 20 && club.tags.some(tag => tag.toLowerCase().includes('forgiveness'))) {
-    reasons.push("Maximum forgiveness");
+  // Then skill level (skip for wedges)
+  if (categoryTag !== 'Wedges') {
+    if (handicapValue <= 10 && club.tags.some(tag => tag.toLowerCase().includes('precision'))) {
+      reasons.push("Tour-level precision");
+    } else if (handicapValue > 10 && handicapValue <= 20 && club.tags.some(tag => tag.toLowerCase().includes('control'))) {
+      reasons.push("Great control & distance");
+    } else if (handicapValue > 20 && club.tags.some(tag => tag.toLowerCase().includes('forgiveness'))) {
+      reasons.push("Maximum forgiveness");
+    }
   }
   
   // Price
@@ -485,6 +528,12 @@ function generateMatchReason(club, profile, score, categoryTag) {
   // Brand
   if (profile.brandPreferences?.includes(club.brand)) {
     reasons.push("Your preferred brand");
+  } else if (categoryTag === 'Wedges') {
+    // For wedges, mention premium brands
+    const premiumBrands = ['Titleist', 'Callaway', 'TaylorMade', 'Ping', 'Cleveland', 'Mizuno', 'Vokey'];
+    if (premiumBrands.includes(club.brand)) {
+      reasons.push("Premium brand");
+    }
   }
   
   if (reasons.length === 0) {
