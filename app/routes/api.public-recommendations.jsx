@@ -93,10 +93,10 @@ export async function action({ request }) {
     console.log(`📊 Category breakdown:`, breakdown);
 
     const budgetAllocation = {
-      driver: budget * 0.35,
+      driver: budget * 0.30,
       woods: budget * 0.15,
-      hybrids: budget * 0.15,
-      irons: budget * 0.4,
+      hybrids: budget * 0.125,
+      irons: budget * 0.40,
       wedges: budget * 0.10,
       putter: budget * 0.15,
     };
