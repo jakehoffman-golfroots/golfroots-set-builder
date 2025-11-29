@@ -157,6 +157,12 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
     const titleLower = p.title.toLowerCase();
     const productTypeLower = p.productType?.toLowerCase() || '';
     
+    // CRITICAL: Exclude clubs over allocated budget - HARD LIMIT
+    if (p.price > profile.budget) {
+      console.log(`  💰 Excluded over budget: ${p.title} ($${p.price} > $${profile.budget} allocated)`);
+      return false;
+    }
+    
     // Only exclude if productType is explicitly "Shaft" or "Shafts"
     const isStandaloneShaft = (productTypeLower === 'shaft' || productTypeLower === 'shafts');
     
@@ -399,24 +405,19 @@ function scoreClub(club, profile, categoryTag) {
   // PRIORITY #3: PRICE FIT (30 points max, 40 for wedges)
   const pricePoints = categoryTag === 'Wedges' ? 40 : 30;
   
-  if (club.price <= profile.budget) {
-    const priceRatio = club.price / profile.budget;
-    if (priceRatio >= 0.85) {
-      score += pricePoints; // Premium option - 85-100% of budget gets max points
-    } else if (priceRatio >= 0.70) {
-      score += Math.floor(pricePoints * 0.85); // Good option - 70-85% of budget
-    } else if (priceRatio >= 0.50) {
-      score += Math.floor(pricePoints * 0.70); // Mid-range option - 50-70% of budget
-    } else if (priceRatio >= 0.30) {
-      score += Math.floor(pricePoints * 0.50); // Budget option - 30-50% of budget
-    } else {
-      score += Math.floor(pricePoints * 0.25); // Very cheap - under 30% of budget (penalize)
-    }
-  } else if (club.price <= profile.budget * 1.05) {
-    score += Math.floor(pricePoints * 0.60); // Slightly over budget (up to 5% over)
+  // All clubs passed the budget filter, so they're all within budget
+  const priceRatio = club.price / profile.budget;
+  
+  if (priceRatio >= 0.85) {
+    score += pricePoints; // Premium option - 85-100% of budget gets max points
+  } else if (priceRatio >= 0.70) {
+    score += Math.floor(pricePoints * 0.85); // Good option - 70-85% of budget
+  } else if (priceRatio >= 0.50) {
+    score += Math.floor(pricePoints * 0.70); // Mid-range option - 50-70% of budget
+  } else if (priceRatio >= 0.30) {
+    score += Math.floor(pricePoints * 0.50); // Budget option - 30-50% of budget
   } else {
-    // Over budget - give minimal points so it ranks low
-    score += 0;
+    score += Math.floor(pricePoints * 0.25); // Very cheap - under 30% of budget
   }
   
   // PRIORITY #4: BRAND PREFERENCE (15 points, 25 for wedges)
@@ -523,10 +524,10 @@ function generateMatchReason(club, profile, score, categoryTag) {
     }
   }
   
-  // Price
-  if (club.price <= profile.budget * 0.9) {
+  // Price - all clubs are within allocated budget now
+  if (club.price <= profile.budget * 0.85) {
     reasons.push("Excellent value");
-  } else if (club.price <= profile.budget) {
+  } else {
     reasons.push("Within budget");
   }
   
