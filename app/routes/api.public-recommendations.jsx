@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
+const prisma = new PrismaClient();
+
 export async function loader({ request }) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -34,63 +36,57 @@ export async function action({ request }) {
       height,
     } = body;
 
-    console.log('Loading products from database...');
-    const dbStartTime = Date.now();
-
-    // Read from database instead of Shopify API
-    const prisma = new PrismaClient();
-
+    // Fetch products from database
+    console.log('📦 Fetching products from database...');
     const allProducts = await prisma.golfProduct.findMany({
       where: {
         availableForSale: true,
-        inventory: {
-          gt: 0
-        }
+        inventory: { gt: 0 }
       }
     });
 
-    await prisma.$disconnect();
-
-    const dbElapsed = Date.now() - dbStartTime;
-    console.log(`✅ Loaded ${allProducts.length} products from database in ${dbElapsed}ms`);
-
-    // Check if data is stale (older than 2 hours)
-    if (allProducts.length > 0) {
-      const oldestSync = allProducts[0]?.lastSynced;
-      if (oldestSync) {
-        const ageHours = (Date.now() - new Date(oldestSync).getTime()) / (1000 * 60 * 60);
-        if (ageHours > 2) {
-          console.log(`⚠️  Product data is ${ageHours.toFixed(1)} hours old - consider running sync`);
-        } else {
-          console.log(`✅ Product data is fresh (${ageHours.toFixed(1)} hours old)`);
-        }
-      }
-    }
+    console.log(`📊 Found ${allProducts.length} products in database`);
 
     if (allProducts.length === 0) {
-      console.error('❌ No products in database! Run sync first: POST /api/sync-products');
+      console.error('No products found in database. Run sync first: POST /api/sync-products');
       throw new Error('No products available. Please run product sync first.');
     }
 
-    // Filter for valid golf clubs
-// Filter for valid golf clubs - EXCLUDE headcovers and accessories
-const validCategories = ['Drivers', 'Woods', 'Hybrids', 'Iron Sets', 'Wedges', 'Putters'];
-const products = allProducts.filter(p => {
-  // Must have a valid category tag
-  const hasValidCategory = p.tags.some(tag => validCategories.includes(tag));
-  
-  // Exclude headcovers and accessories
-  const isHeadcover = p.productType?.toLowerCase().includes('headcover') ||
-                     p.productType?.toLowerCase().includes('head cover') ||
-                     p.title.toLowerCase().includes('headcover') ||
-                     p.title.toLowerCase().includes('head cover') ||
-                     p.tags.some(tag => tag.toLowerCase().includes('headcover')) ||
-                     p.tags.some(tag => tag.toLowerCase().includes('head cover')) ||
-                     p.tags.some(tag => tag.toLowerCase() === 'accessories') ||
-                     p.tags.some(tag => tag.toLowerCase() === 'covers');
-  
-  return hasValidCategory && !isHeadcover;
-});
+    // Filter for valid golf clubs - EXCLUDE shafts, headcovers, and accessories
+    const validCategories = ['Drivers', 'Woods', 'Hybrids', 'Iron Sets', 'Wedges', 'Putters'];
+    const products = allProducts.filter(p => {
+      const hasValidCategory = p.tags.some(tag => validCategories.includes(tag));
+      
+      const titleLower = p.title.toLowerCase();
+      const productTypeLower = p.productType?.toLowerCase() || '';
+      
+      // CRITICAL: Exclude shafts - these are NOT complete clubs
+      const isShaft = productTypeLower.includes('shaft') ||
+                      productTypeLower.includes('shafts') ||
+                      titleLower.includes(' shaft ') ||
+                      titleLower.includes(' shafts ') ||
+                      titleLower.startsWith('shaft ') ||
+                      titleLower.startsWith('shafts ') ||
+                      titleLower.endsWith(' shaft') ||
+                      titleLower.endsWith(' shafts') ||
+                      p.tags.some(tag => tag.toLowerCase() === 'shafts') ||
+                      p.tags.some(tag => tag.toLowerCase() === 'shaft');
+      
+      // CRITICAL: Exclude headcovers
+      const isHeadcover = productTypeLower.includes('headcover') ||
+                         productTypeLower.includes('head cover') ||
+                         titleLower.includes('headcover') ||
+                         titleLower.includes('head cover') ||
+                         p.tags.some(tag => tag.toLowerCase().includes('headcover')) ||
+                         p.tags.some(tag => tag.toLowerCase().includes('head cover'));
+      
+      // CRITICAL: Exclude accessories
+      const isAccessory = p.tags.some(tag => tag.toLowerCase() === 'accessories') ||
+                         p.tags.some(tag => tag.toLowerCase() === 'covers') ||
+                         productTypeLower === 'accessories';
+      
+      return hasValidCategory && !isShaft && !isHeadcover && !isAccessory;
+    });
 
     console.log(`📊 Total golf clubs with inventory: ${products.length}`);
 
@@ -107,12 +103,12 @@ const products = allProducts.filter(p => {
     console.log(`📊 Category breakdown:`, breakdown);
 
     const budgetAllocation = {
-      driver: budget * 0.3,
-      woods: budget * 0.15,
-      hybrids: budget * 0.10,
-      irons: budget * 0.4,
-      wedges: budget * 0.12,
-      putter: budget * 0.15,
+      driver: budget * 0.35,
+      woods: budget * 0.20,
+      hybrids: budget * 0.15,
+      irons: budget * 0.45,
+      wedges: budget * 0.25,
+      putter: budget * 0.20,
     };
 
     const recommendations = {
@@ -155,156 +151,44 @@ const products = allProducts.filter(p => {
   }
 }
 
-// Height-to-length mappings
-function getAcceptableLengths(height, category) {
-  if (!height) return null; // No height filtering if not provided
-  
-  const heightInches = parseInt(height);
-  
-  console.log(`\n🔍 Height filter check: ${heightInches}" for ${category}`);
-  
-  if (category === 'Drivers') {
-    // 5'5" (65") and under to 5'9" (69")
-    if (heightInches <= 69) {
-      console.log(`  → Acceptable driver lengths: 44"-45"`);
-      return ['44"', '44.25"', '44.5"', '44.75"', '45"'];
-    }
-    // 5'10" (70") to 6'2" (74")
-    else if (heightInches >= 70 && heightInches <= 74) {
-      console.log(`  → Acceptable driver lengths: 44.5"-45.5"`);
-      return ['44.5"', '44.75"', '45"', '45.25"', '45.5"'];
-    }
-    // 6'3" (75") to 6'4" (76") and up
-    else if (heightInches >= 75) {
-      console.log(`  → Acceptable driver lengths: 45"-46"`);
-      return ['45"', '45.25"', '45.5"', '45.75"', '46"'];
-    }
-  }
-  
-  if (category === 'Iron Sets') {
-    // 5'5" (65") and under to 5'9" (69")
-    if (heightInches <= 69) {
-      console.log(`  → Acceptable iron lengths: -1" to Standard`);
-      return ['-1"', '-0.75"', '-0.5"', '-0.25"', 'Standard', 'Standard Length'];
-    }
-    // 5'10" (70") to 6'2" (74")
-    else if (heightInches >= 70 && heightInches <= 74) {
-      console.log(`  → Acceptable iron lengths: -0.5" to +0.5"`);
-      return ['-0.5"', '-0.25"', 'Standard', 'Standard Length', '+0.25"', '+0.5"'];
-    }
-    // 6'3" (75") to 6'4" (76") and up
-    else if (heightInches >= 75) {
-      console.log(`  → Acceptable iron lengths: Standard to +1"`);
-      return ['Standard', 'Standard Length', '+0.25"', '+0.5"', '+0.75"', '+1"'];
-    }
-  }
-  
-  return null; // No height filtering for other categories
-}
-
-function checkLengthMatch(product, acceptableLengths) {
-  if (!acceptableLengths) return true; // No filtering needed
-  
-  // Check both title and tags for length indicators
-  const title = product.title;
-  const tags = product.tags;
-  
-  console.log(`  🔍 Checking: ${title}`);
-  console.log(`  📝 Tags: ${tags.join(', ')}`);
-  
-  // For each acceptable length, check for exact matches
-  const hasMatch = acceptableLengths.some(acceptableLength => {
-    // Remove quotes and get numeric value for comparison
-    const cleanAcceptable = acceptableLength.replace(/"/g, '');
-    
-    // Strategy 1: Check tags for EXACT match
-    for (const tag of tags) {
-      const tagLower = tag.toLowerCase();
-      const acceptableLower = acceptableLength.toLowerCase();
-      
-      // Exact tag match
-      if (tagLower === acceptableLower || tagLower === cleanAcceptable) {
-        console.log(`  ✅ EXACT TAG MATCH: "${tag}" === "${acceptableLength}"`);
-        return true;
-      }
-      
-      // Tag contains the exact length with quote or inch
-      if (tagLower === cleanAcceptable + '"' || 
-          tagLower === cleanAcceptable + ' inch' ||
-          tagLower === cleanAcceptable + ' in' ||
-          tagLower === cleanAcceptable + 'inch' ||
-          tagLower === cleanAcceptable + 'in') {
-        console.log(`  ✅ TAG MATCH: "${tag}" matches "${acceptableLength}"`);
-        return true;
-      }
-    }
-    
-    // Strategy 2: Check title for length WITH context
-    const titleLower = title.toLowerCase();
-    
-    // For numeric lengths like "44", "44.5", "45.5", etc.
-    if (/^[0-9+\-\.]+\"?$/.test(cleanAcceptable)) {
-      // Build very specific patterns that won't match partial numbers
-      const patterns = [
-        // Length at end of string with quote: "44\""
-        new RegExp(`${cleanAcceptable.replace(/[+\-\.]/g, '\\$&')}"\\s*$`, 'i'),
-        // Length with inch: "44 inch" or "44inch"
-        new RegExp(`${cleanAcceptable.replace(/[+\-\.]/g, '\\$&')}\\s*inch`, 'i'),
-        // Length with space before and quote after: " 44\""
-        new RegExp(`\\s${cleanAcceptable.replace(/[+\-\.]/g, '\\$&')}"`, 'i'),
-        // Length at start with quote: "44\" driver"
-        new RegExp(`^${cleanAcceptable.replace(/[+\-\.]/g, '\\$&')}"`, 'i'),
-      ];
-      
-      if (patterns.some(pattern => pattern.test(titleLower))) {
-        console.log(`  ✅ TITLE MATCH: "${title}" contains "${acceptableLength}"`);
-        return true;
-      }
-    }
-    
-    // Strategy 3: Special handling for "Standard" or "Standard Length"
-    if (acceptableLength === 'Standard' || acceptableLength === 'Standard Length') {
-      if (tags.some(tag => tag.toLowerCase() === 'standard' || tag.toLowerCase() === 'standard length')) {
-        console.log(`  ✅ STANDARD MATCH in tags`);
-        return true;
-      }
-      
-      if (/\bstandard\s+length\b/i.test(titleLower) || 
-          /\bstandard\b/i.test(titleLower)) {
-        console.log(`  ✅ STANDARD MATCH in title`);
-        return true;
-      }
-    }
-    
-    return false;
-  });
-  
-  if (!hasMatch) {
-    console.log(`  ❌ NO MATCH found for acceptable lengths: ${acceptableLengths.join(', ')}`);
-  }
-  
-  return hasMatch;
-}
-
 function findBestMatches(products, categoryTag, profile, limit = 12) {
   // ========================================================================
   // FILTERING PHASE - These filters ELIMINATE clubs entirely before scoring
-  // Wrong gender or handedness = NEVER shown, regardless of other factors
+  // Wrong gender, handedness, shafts, or headcovers = NEVER shown
   // ========================================================================
   
   const filtered = products.filter(p => {
     const hasCategory = p.tags.includes(categoryTag);
     const inStock = p.inventory > 0;
-
-        const isHeadcover = p.productType?.toLowerCase().includes('headcover') ||
-                       p.productType?.toLowerCase().includes('head cover') ||
-                       p.title.toLowerCase().includes('headcover') ||
-                       p.title.toLowerCase().includes('head cover') ||
-                       p.tags.some(tag => tag.toLowerCase().includes('headcover')) ||
-                       p.tags.some(tag => tag.toLowerCase().includes('head cover'));
+    
+    const titleLower = p.title.toLowerCase();
+    const productTypeLower = p.productType?.toLowerCase() || '';
+    
+    // CRITICAL: Exclude shafts - these are NOT complete clubs
+    const isShaft = productTypeLower.includes('shaft') ||
+                    productTypeLower.includes('shafts') ||
+                    titleLower.includes(' shaft ') ||
+                    titleLower.includes(' shafts ') ||
+                    titleLower.startsWith('shaft ') ||
+                    titleLower.startsWith('shafts ') ||
+                    titleLower.endsWith(' shaft') ||
+                    titleLower.endsWith(' shafts') ||
+                    p.tags.some(tag => tag.toLowerCase() === 'shafts') ||
+                    p.tags.some(tag => tag.toLowerCase() === 'shaft');
+    
+    if (isShaft) {
+      return false; // ELIMINATE shafts immediately
+    }
+    
+    // CRITICAL: Exclude headcovers
+    const isHeadcover = productTypeLower.includes('headcover') ||
+                       productTypeLower.includes('head cover') ||
+                       titleLower.includes('headcover') ||
+                       titleLower.includes('head cover') ||
+                       p.tags.some(tag => tag.toLowerCase().includes('headcover'));
     
     if (isHeadcover) {
-      return false; // ELIMINATE headcovers immediately
+      return false; // ELIMINATE headcovers
     }
     
     // SPECIAL FILTER: For Wedges category, ONLY show Sand Wedges
@@ -315,7 +199,7 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
       }
     }
     
-    // HARD FILTER #1: HANDEDNESS - More lenient approach
+    // HARD FILTER #1: HANDEDNESS
     let handednessMatch = true;
     
     if (profile.handedness === 'left') {
@@ -331,56 +215,51 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
         tag.toLowerCase().includes('left hand') ||
         tag.toLowerCase().includes('left-hand') ||
         tag.toLowerCase().includes('lefty') ||
-        tag.toLowerCase().includes('lh ') ||
-        tag === 'handedness_left' ||
-        tag.toLowerCase() === 'left'
-      ) || p.title.toLowerCase().includes('left hand') ||
-           p.title.toLowerCase().includes('left-hand') ||
-           p.title.toLowerCase().includes(' lh ') ||
-           p.title.toLowerCase().includes('lefty');
-      
-      handednessMatch = !isExplicitlyLeftHanded; // Show if NOT explicitly left-handed
+        tag === 'handedness_left'
+      );
+      handednessMatch = !isExplicitlyLeftHanded;
     }
     
-    // If handedness doesn't match, this club is ELIMINATED - return false immediately
     if (!handednessMatch) {
       return false;
     }
     
-    // HARD FILTER #2: GENDER - More lenient approach
+    // HARD FILTER #2: GENDER - Wrong gender = ELIMINATED
     let genderMatch = true;
-    const titleLower = p.title.toLowerCase();
     const tagsLower = p.tags.map(t => t.toLowerCase());
     
-    // Check if product is explicitly women's/ladies
-    const isExplicitlyWomens = tagsLower.some(tag => 
+    // Check if product is women's/ladies
+    const isWomens = tagsLower.some(tag => 
       tag.includes('women') || 
       tag.includes('ladies') || 
       tag.includes('female') ||
       tag.includes('lady')
     ) || titleLower.includes('women') || 
         titleLower.includes('ladies') || 
-        titleLower.includes('lady');
+        titleLower.includes('lady') ||
+        titleLower.includes("women's flex") ||
+        titleLower.includes("ladies flex");
     
-    // Check if product is explicitly men's
-    const isExplicitlyMens = tagsLower.some(tag => 
-      tag.includes("men's") || 
+    // Check if product is men's
+    const isMens = tagsLower.some(tag => 
+      tag.includes('men') || 
+      tag.includes('male') ||
       tag === 'gender_male'
-    ) || titleLower.includes("men's only");
+    ) || titleLower.includes("men's");
     
     if (profile.gender === 'male') {
-      // For men: Only exclude if EXPLICITLY women's/ladies
-      genderMatch = !isExplicitlyWomens;
+      // NEVER show women's clubs to men - ELIMINATED
+      genderMatch = !isWomens;
     } else if (profile.gender === 'female') {
-      // For women: Show women's items, or unisex if they exist
-  genderMatch = isWomens;
+      // STRICTLY show ONLY women's clubs - no unisex, no men's
+      genderMatch = isWomens;
     } else if (profile.gender === 'unisex') {
-      // For unisex: Show everything except explicitly gendered
-      genderMatch = true; // Show all for now
+      // For unisex preference, exclude explicitly gendered clubs
+      genderMatch = !isWomens && !isMens;
     }
     
-    // Additional flex-based gender filtering for edge cases (NOT for wedges)
-    if (categoryTag !== 'Wedges' && (profile.flex === 'stiff' || profile.flex === 'extra-stiff')) {
+    // Additional flex-based gender filtering for edge cases
+    if (profile.flex === 'stiff' || profile.flex === 'extra-stiff') {
       // Stiff/X-Stiff flex users should NEVER see ladies flex - ELIMINATED
       const hasLadiesFlex = titleLower.includes("women's flex") || 
                            titleLower.includes("ladies flex") ||
@@ -390,34 +269,11 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
       }
     }
     
-    // If gender doesn't match, this club is ELIMINATED - return false immediately
+    // If gender doesn't match, this club is ELIMINATED
     if (!genderMatch) {
       return false;
     }
     
-    // HARD FILTER #3: BUDGET - Over budget = ELIMINATED
-    const withinBudget = p.price <= profile.budget;
-
-    if (!withinBudget) {
-      return false; // Over budget, ELIMINATED
-    }
-
-    // HARD FILTER #4: HEIGHT/LENGTH - Only for Drivers and Iron Sets AND only for males
-    if ((categoryTag === 'Drivers' || categoryTag === 'Iron Sets') && profile.gender === 'male') {
-      const acceptableLengths = getAcceptableLengths(profile.height, categoryTag);
-      
-      if (acceptableLengths) {
-        const lengthMatch = checkLengthMatch(p, acceptableLengths);
-        
-        if (!lengthMatch) {
-          console.log(`❌ Height filter eliminated: ${p.title} - looking for ${acceptableLengths.join(', ')}`);
-          return false; // Wrong length for height, ELIMINATED
-        } else {
-          console.log(`✅ Height filter passed: ${p.title}`);
-        }
-      }
-    }
-
     // Only clubs that pass ALL filters reach this point
     return hasCategory && inStock;
   });
@@ -428,244 +284,193 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
   // ========================================================================
   
   const scored = filtered.map(club => {
-    const score = scoreClub(club, profile, categoryTag);
+    const score = scoreClub(club, profile);
     return {
       ...club,
       score: score,
-      matchReason: generateMatchReason(club, profile, score, categoryTag)
+      matchReason: generateMatchReason(club, profile, score)
     };
   });
 
-  // Sort by score DESC, then by price DESC (expensive first when tied)
+  // Sort by score DESC, then by price ASC (cheaper is better if scores are equal)
   const sorted = scored.sort((a, b) => {
     if (b.score !== a.score) {
-      return b.score - a.score; // Higher score first
+      return b.score - a.score;
     }
-    return b.price - a.price; // If tied, HIGHER price first (better condition)
+    return a.price - b.price;
   });
-  
+
   return sorted.slice(0, limit);
 }
 
-function scoreClub(club, profile, categoryTag) {
-  // NOTE: This function only scores clubs that already passed gender/handedness filters
-  // Gender and handedness mismatches have already been ELIMINATED
-  
+function scoreClub(club, profile) {
   let score = 0;
   const handicapValue = parseHandicap(profile.handicap);
   
-  // ===================================
-  // PRIORITY 1: FLEX MATCH (Highest weight - 100 points)
-  // SKIP FOR WEDGES - Wedges don't need flex matching
-  // ===================================
-  if (categoryTag !== 'Wedges') {
-    if (profile.flex) {
-      const hasMatchingFlex = checkFlexMatch(club, profile.flex);
-      if (hasMatchingFlex) {
-        score += 100; // Exact flex match requested by user - HIGHEST PRIORITY
-      }
-    } else if (profile.swingSpeed) {
-      const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
-      const hasMatchingFlex = checkFlexMatch(club, idealFlex);
-      if (hasMatchingFlex) {
-        score += 100; // Flex matches swing speed - HIGHEST PRIORITY
-      }
-    }
-  }
-
-  // ===================================
-  // PRIORITY 2: SKILL LEVEL MATCH (Second priority - 75 points)
-  // SKIP FOR WEDGES - Wedges don't need skill level matching
-  // ===================================
-  if (categoryTag !== 'Wedges') {
-    let idealSkillTag = '';
-    if (handicapValue <= 10) {
-      idealSkillTag = 'Precision';
-    } else if (handicapValue <= 20) {
-      idealSkillTag = 'Control & Distance';
-    } else {
-      idealSkillTag = 'Forgiveness';
-    }
-
-    const hasIdealSkill = club.tags.some(tag => 
-      tag.toLowerCase().includes(idealSkillTag.toLowerCase())
-    );
-
-    if (hasIdealSkill) {
-      score += 75; // Perfect skill level match - SECOND PRIORITY
-    } else {
-      const hasAnySkill = club.tags.some(tag => 
-        tag.toLowerCase().includes('forgiveness') ||
-        tag.toLowerCase().includes('precision') ||
-        tag.toLowerCase().includes('control')
-      );
-      if (hasAnySkill) {
-        score += 35; // Has some skill tag, but not ideal
-      }
-    }
-  }
-
-  // ===================================
-  // PRIORITY 3: BRAND PREFERENCE (Third priority - 50 points)
-  // ===================================
-  if (profile.brandPreferences && profile.brandPreferences.length > 0) {
-    const normalizedClubBrand = club.brand.trim().toLowerCase();
-    const matchesBrand = profile.brandPreferences.some(prefBrand => 
-      normalizedClubBrand === prefBrand.trim().toLowerCase() ||
-      normalizedClubBrand.includes(prefBrand.trim().toLowerCase())
+  // PRIORITY #1: FLEX MATCHING (50 points max)
+  if (profile.flex) {
+    const requestedFlexTags = getFlexTagsFromPreference(profile.flex);
+    const hasMatchingFlex = club.tags.some(tag => 
+      requestedFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
     );
     
-    if (matchesBrand) {
-      score += 50; // User's preferred brand - THIRD PRIORITY
+    if (hasMatchingFlex) {
+      score += 50; // Perfect flex match
+    }
+  } else if (profile.swingSpeed) {
+    const idealFlexTags = getIdealFlexTags(profile.swingSpeed);
+    const hasIdealFlex = club.tags.some(tag => 
+      idealFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
+    );
+    
+    if (hasIdealFlex) {
+      score += 50; // Ideal flex for swing speed
+    } else {
+      score += 15; // No flex match, but not disqualifying
     }
   }
-
-  // ===================================
-  // PRICE BONUS (Minor bonus for using budget - 0-10 points)
-  // Only give bonus to items WITHIN budget
-  // ===================================
-  if (club.price <= profile.budget) {
-    const budgetUsageRatio = club.price / profile.budget;
-    score += Math.floor(budgetUsageRatio * 10); // 0-10 points based on price
+  
+  // PRIORITY #2: SKILL LEVEL (40 points max)
+  let idealSkillTag = '';
+  if (handicapValue <= 10) {
+    idealSkillTag = 'Precision';
+  } else if (handicapValue <= 20) {
+    idealSkillTag = 'Control & Distance';
+  } else {
+    idealSkillTag = 'Forgiveness';
   }
   
-  // ===================================
-  // GENDER MATCH (Minor bonus - already filtered, this is just a tiebreaker)
-  // ===================================
+  const hasIdealSkill = club.tags.some(tag => 
+    tag.toLowerCase().includes(idealSkillTag.toLowerCase())
+  );
+  
+  if (hasIdealSkill) {
+    score += 40; // Perfect skill match
+  } else {
+    const hasAnySkill = club.tags.some(tag => 
+      tag.toLowerCase().includes('forgiveness') ||
+      tag.toLowerCase().includes('precision') ||
+      tag.toLowerCase().includes('control')
+    );
+    if (hasAnySkill) {
+      score += 20; // Has a skill tag, just not ideal
+    } else {
+      score += 15; // No skill tags
+    }
+  }
+  
+  // PRIORITY #3: PRICE FIT (30 points max)
+  if (club.price <= profile.budget) {
+    const priceRatio = club.price / profile.budget;
+    if (priceRatio >= 0.7) {
+      score += 30; // Premium option within budget
+    } else if (priceRatio >= 0.5) {
+      score += 25; // Mid-range option
+    } else {
+      score += 20; // Budget option
+    }
+  } else if (club.price <= profile.budget * 1.15) {
+    score += 10; // Slightly over budget but close
+  }
+  
+  // PRIORITY #4: BRAND PREFERENCE (15 points)
+  if (profile.brandPreferences && profile.brandPreferences.length > 0) {
+    if (profile.brandPreferences.includes(club.brand)) {
+      score += 15;
+    }
+  }
+  
+  // PRIORITY #5: GENDER (already filtered, small bonus - 5 points)
   const titleLower = club.title.toLowerCase();
   const tagsLower = club.tags.map(t => t.toLowerCase());
   
-  if (profile.gender === 'male') {
-    if (club.tags.includes('gender_male') || tagsLower.some(t => t.includes('men'))) {
-      score += 5;
-    } else if (!tagsLower.some(t => t.includes('women') || t.includes('ladies'))) {
-      score += 3; // Neutral/unisex club
-    }
-  } else if (profile.gender === 'female') {
-    if (club.tags.includes('gender_female') || tagsLower.some(t => t.includes('women') || t.includes('ladies'))) {
-      score += 5;
-    } else if (!tagsLower.some(t => t.includes('men') || t.includes('male'))) {
-      score += 3; // Neutral/unisex club
-    }
-  } else {
-    score += 3; // Unisex preference
+  const isWomens = tagsLower.some(tag => 
+    tag.includes('women') || tag.includes('ladies')
+  ) || titleLower.includes('women') || titleLower.includes('ladies');
+  
+  const isMens = tagsLower.some(tag => 
+    tag.includes('men') || tag.includes('male')
+  ) || titleLower.includes("men's");
+  
+  if (profile.gender === 'male' && isMens) {
+    score += 5;
+  } else if (profile.gender === 'female' && isWomens) {
+    score += 5;
+  } else if (profile.gender === 'unisex' && !isWomens && !isMens) {
+    score += 5;
   }
   
   return score;
 }
 
-// NEW FUNCTION: More precise flex matching that excludes wrong flex types
-function checkFlexMatch(club, requestedFlex) {
-  const titleLower = club.title.toLowerCase();
-  const tagsLower = club.tags.map(t => t.toLowerCase());
-  const allText = [...tagsLower, titleLower].join(' ');
-  
-  // Define what to look for and what to EXCLUDE for each flex type
-  const flexPatterns = {
-    'senior': {
-      include: ['senior flex', 'a flex', 'senior/womens'],
-      exclude: ['regular', 'stiff', 'x stiff', 'extra stiff']
-    },
-    'regular': {
-      include: ['regular flex', 'r flex', 'reg flex', 'flex_regular'],
-      exclude: ['senior', 'stiff', 'x stiff', 'extra stiff', 'ladies']
-    },
-    'stiff': {
-      include: ['stiff flex', 's flex', 'flex_stiff'],
-      exclude: ['x stiff', 'extra stiff', 'senior', 'regular', 'ladies']
-    },
-    'extra-stiff': {
-      include: ['x stiff', 'extra stiff', 'x flex', 'xstiff'],
-      exclude: ['senior', 'regular', 'ladies']
-    }
-  };
-  
-  const pattern = flexPatterns[requestedFlex.toLowerCase()];
-  if (!pattern) return false;
-  
-  // First check if any EXCLUDED patterns are present
-  const hasExcluded = pattern.exclude.some(excludePattern => 
-    allText.includes(excludePattern)
-  );
-  
-  if (hasExcluded) {
-    return false; // Has wrong flex type, not a match
-  }
-  
-  // Then check if any INCLUDED patterns are present
-  const hasIncluded = pattern.include.some(includePattern => 
-    allText.includes(includePattern)
-  );
-  
-  return hasIncluded;
+function parseHandicap(handicap) {
+  if (!handicap) return 20;
+  const str = String(handicap).toLowerCase();
+  if (str.includes('scratch') || str === '0') return 0;
+  if (str.includes('beginner')) return 30;
+  const num = parseInt(str.replace(/[^0-9]/g, ''));
+  return isNaN(num) ? 20 : num;
 }
 
-function parseHandicap(handicapString) {
-  if (handicapString === '30+') return 35;
-  const match = handicapString.match(/(\d+)-(\d+)/);
-  if (match) {
-    return (parseInt(match[1]) + parseInt(match[2])) / 2;
-  }
-  return 25;
-}
-
-function getIdealFlexFromSpeed(swingSpeed) {
+function getIdealFlexTags(swingSpeed) {
   const speedMap = {
-    'slow': 'senior',
-    'moderate': 'regular',
-    'fast': 'stiff'
+    'slow': ['flex_senior', 'Senior Flex', 'Senior/Womens/A Flex', 'Lady'],
+    'moderate': ['flex_regular', 'Regular Flex', 'reg'],
+    'fast': ['flex_stiff', 'Stiff Flex', 'X Stiff Flex']
   };
-  return speedMap[swingSpeed.toLowerCase()] || 'regular';
+  return speedMap[swingSpeed.toLowerCase()] || ['flex_regular', 'Regular Flex'];
 }
 
-function generateMatchReason(club, profile, score, categoryTag) {
+function getFlexTagsFromPreference(flexPreference) {
+  const flexMap = {
+    'senior': ['flex_senior', 'Senior Flex', 'Senior/Womens/A Flex', 'A Flex'],
+    'regular': ['flex_regular', 'Regular Flex', 'R Flex', 'reg'],
+    'stiff': ['flex_stiff', 'Stiff Flex', 'S Flex'],
+    'extra-stiff': ['X Stiff Flex', 'Extra Stiff', 'X Flex']
+  };
+  return flexMap[flexPreference.toLowerCase()] || ['flex_regular'];
+}
+
+function generateMatchReason(club, profile, score) {
   const reasons = [];
   const handicapValue = parseHandicap(profile.handicap);
   
-  // Show flex match first since it's priority #1 (SKIP for wedges)
-  if (categoryTag !== 'Wedges') {
-    if (profile.flex) {
-      const hasMatchingFlex = checkFlexMatch(club, profile.flex);
-      if (hasMatchingFlex) {
-        reasons.push("Perfect flex");
-      }
-    } else if (profile.swingSpeed) {
-      const idealFlex = getIdealFlexFromSpeed(profile.swingSpeed);
-      const hasMatchingFlex = checkFlexMatch(club, idealFlex);
-      if (hasMatchingFlex) {
-        reasons.push("Right flex");
-      }
+  // Prioritize flex matching in reasons
+  if (profile.flex) {
+    const requestedFlexTags = getFlexTagsFromPreference(profile.flex);
+    if (club.tags.some(tag => 
+      requestedFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
+    )) {
+      reasons.push("Perfect flex match");
+    }
+  } else if (profile.swingSpeed) {
+    const idealFlexTags = getIdealFlexTags(profile.swingSpeed);
+    if (club.tags.some(tag => 
+      idealFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
+    )) {
+      reasons.push("Ideal flex for your speed");
     }
   }
   
-  // Then show skill level match (SKIP for wedges)
-  if (categoryTag !== 'Wedges') {
-    if (handicapValue <= 10 && club.tags.some(tag => tag.toLowerCase().includes('precision'))) {
-      reasons.push("Tour-level precision");
-    } else if (handicapValue > 10 && handicapValue <= 20 && club.tags.some(tag => tag.toLowerCase().includes('control'))) {
-      reasons.push("Great control & distance");
-    } else if (handicapValue > 20 && club.tags.some(tag => tag.toLowerCase().includes('forgiveness'))) {
-      reasons.push("Maximum forgiveness");
-    }
+  // Then skill level
+  if (handicapValue <= 10 && club.tags.some(tag => tag.toLowerCase().includes('precision'))) {
+    reasons.push("Tour-level precision");
+  } else if (handicapValue > 10 && handicapValue <= 20 && club.tags.some(tag => tag.toLowerCase().includes('control'))) {
+    reasons.push("Great control & distance");
+  } else if (handicapValue > 20 && club.tags.some(tag => tag.toLowerCase().includes('forgiveness'))) {
+    reasons.push("Maximum forgiveness");
   }
   
+  // Price
   if (club.price <= profile.budget * 0.9) {
     reasons.push("Excellent value");
   } else if (club.price <= profile.budget) {
     reasons.push("Within budget");
   }
   
-  // Check brand preference with same normalization as scoring
-  if (profile.brandPreferences && profile.brandPreferences.length > 0) {
-    const normalizedClubBrand = club.brand.trim().toLowerCase();
-    const matchesBrand = profile.brandPreferences.some(prefBrand => 
-      normalizedClubBrand === prefBrand.trim().toLowerCase() ||
-      normalizedClubBrand.includes(prefBrand.trim().toLowerCase())
-    );
-    
-    if (matchesBrand) {
-      reasons.push("⭐ Your preferred brand");
-    }
+  // Brand
+  if (profile.brandPreferences?.includes(club.brand)) {
+    reasons.push("Your preferred brand");
   }
   
   if (reasons.length === 0) {
