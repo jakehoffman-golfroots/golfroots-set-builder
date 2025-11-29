@@ -34,7 +34,6 @@ export async function action({ request }) {
       gender,
       handedness = 'right',
       height,
-      selectedClubs = {}, // Track what's already been selected
     } = body;
 
     // Fetch products from database
@@ -93,35 +92,22 @@ export async function action({ request }) {
 
     console.log(`📊 Category breakdown:`, breakdown);
 
-    // Calculate spent budget from selected clubs
-    let spentBudget = 0;
-    if (selectedClubs) {
-      Object.values(selectedClubs).forEach(club => {
-        if (club && club.price) {
-          spentBudget += club.price;
-        }
-      });
-    }
-    
-    const remainingBudget = budget - spentBudget;
-    console.log(`💰 Budget: Total $${budget}, Spent $${spentBudget.toFixed(2)}, Remaining $${remainingBudget.toFixed(2)}`);
-
     const budgetAllocation = {
       driver: budget * 0.35,
-      woods: budget * 0.20,
+      woods: budget * 0.15,
       hybrids: budget * 0.15,
-      irons: budget * 0.45,
-      wedges: budget * 0.25,
-      putter: budget * 0.20,
+      irons: budget * 0.4,
+      wedges: budget * 0.10,
+      putter: budget * 0.15,
     };
 
     const recommendations = {
-      driver: findBestMatches(products, 'Drivers', { handicap, budget: budgetAllocation.driver, remainingBudget, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
-      woods: findBestMatches(products, 'Woods', { handicap, budget: budgetAllocation.woods, remainingBudget, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
-      hybrids: findBestMatches(products, 'Hybrids', { handicap, budget: budgetAllocation.hybrids, remainingBudget, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
-      irons: findBestMatches(products, 'Iron Sets', { handicap, budget: budgetAllocation.irons, remainingBudget, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
-      wedges: findBestMatches(products, 'Wedges', { handicap, budget: budgetAllocation.wedges, remainingBudget, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
-      putter: findBestMatches(products, 'Putters', { handicap, budget: budgetAllocation.putter, remainingBudget, brandPreferences, flex, gender, handedness, height }, 12),
+      driver: findBestMatches(products, 'Drivers', { handicap, budget: budgetAllocation.driver, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      woods: findBestMatches(products, 'Woods', { handicap, budget: budgetAllocation.woods, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      hybrids: findBestMatches(products, 'Hybrids', { handicap, budget: budgetAllocation.hybrids, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      irons: findBestMatches(products, 'Iron Sets', { handicap, budget: budgetAllocation.irons, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      wedges: findBestMatches(products, 'Wedges', { handicap, budget: budgetAllocation.wedges, brandPreferences, swingSpeed, flex, gender, handedness, height }, 12),
+      putter: findBestMatches(products, 'Putters', { handicap, budget: budgetAllocation.putter, brandPreferences, flex, gender, handedness, height }, 12),
     };
 
     console.log('Successfully generated recommendations');
@@ -170,12 +156,6 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
     
     const titleLower = p.title.toLowerCase();
     const productTypeLower = p.productType?.toLowerCase() || '';
-    
-    // CRITICAL: Filter out clubs that exceed remaining budget
-    if (profile.remainingBudget && p.price > profile.remainingBudget) {
-      console.log(`  💰 Excluded over remaining budget: ${p.title} ($${p.price} > $${profile.remainingBudget.toFixed(2)} remaining)`);
-      return false;
-    }
     
     // Only exclude if productType is explicitly "Shaft" or "Shafts"
     const isStandaloneShaft = (productTypeLower === 'shaft' || productTypeLower === 'shafts');
@@ -419,11 +399,8 @@ function scoreClub(club, profile, categoryTag) {
   // PRIORITY #3: PRICE FIT (30 points max, 40 for wedges)
   const pricePoints = categoryTag === 'Wedges' ? 40 : 30;
   
-  // Use remaining budget if available, otherwise use allocated budget
-  const effectiveBudget = profile.remainingBudget || profile.budget;
-  
-  if (club.price <= effectiveBudget) {
-    const priceRatio = club.price / effectiveBudget;
+  if (club.price <= profile.budget) {
+    const priceRatio = club.price / profile.budget;
     if (priceRatio >= 0.85) {
       score += pricePoints; // Premium option - 85-100% of budget gets max points
     } else if (priceRatio >= 0.70) {
@@ -435,10 +412,10 @@ function scoreClub(club, profile, categoryTag) {
     } else {
       score += Math.floor(pricePoints * 0.25); // Very cheap - under 30% of budget (penalize)
     }
-  } else if (club.price <= effectiveBudget * 1.10) {
-    score += Math.floor(pricePoints * 0.60); // Slightly over budget (up to 10% over)
+  } else if (club.price <= profile.budget * 1.05) {
+    score += Math.floor(pricePoints * 0.60); // Slightly over budget (up to 5% over)
   } else {
-    // Way over budget - don't score (should already be filtered out)
+    // Over budget - give minimal points so it ranks low
     score += 0;
   }
   
@@ -547,11 +524,9 @@ function generateMatchReason(club, profile, score, categoryTag) {
   }
   
   // Price
-  const effectiveBudget = profile.remainingBudget || profile.budget;
-  
-  if (club.price <= effectiveBudget * 0.9) {
+  if (club.price <= profile.budget * 0.9) {
     reasons.push("Excellent value");
-  } else if (club.price <= effectiveBudget) {
+  } else if (club.price <= profile.budget) {
     reasons.push("Within budget");
   }
   
