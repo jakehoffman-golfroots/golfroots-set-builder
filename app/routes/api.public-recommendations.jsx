@@ -24,7 +24,7 @@ export async function action({ request }) {
   try {
     const body = await request.json();
     console.log('Received body:', body);
-    
+
     const {
       handicap,
       budget,
@@ -56,25 +56,25 @@ export async function action({ request }) {
     const validCategories = ['Drivers', 'Woods', 'Hybrids', 'Iron Sets', 'Wedges', 'Putters'];
     const products = allProducts.filter(p => {
       const hasValidCategory = p.tags.some(tag => validCategories.includes(tag));
-      
+
       // If it doesn't have a valid club category, exclude it
       if (!hasValidCategory) {
         return false;
       }
-      
+
       const titleLower = p.title.toLowerCase();
       const productTypeLower = p.productType?.toLowerCase() || '';
-      
+
       // Only exclude if productType is explicitly "Shaft" or "Shafts"
       // (Complete clubs may mention shaft in title but won't have productType = "Shaft")
       const isStandaloneShaft = (productTypeLower === 'shaft' || productTypeLower === 'shafts');
-      
+
       // Exclude headcovers
       const isHeadcover = productTypeLower.includes('headcover') ||
                          productTypeLower.includes('head cover') ||
                          titleLower.includes('headcover') ||
                          titleLower.includes('head cover');
-      
+
       return !isStandaloneShaft && !isHeadcover;
     });
 
@@ -113,7 +113,7 @@ export async function action({ request }) {
     console.log('Successfully generated recommendations');
     console.log('=== PUBLIC API SUCCESS ===');
 
-    return new Response(JSON.stringify({ recommendations, budgetAllocation }), { 
+    return new Response(JSON.stringify({ recommendations, budgetAllocation }), {
       headers,
       status: 200
     });
@@ -122,8 +122,8 @@ export async function action({ request }) {
     console.error('=== PUBLIC API ERROR ===');
     console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
-    
-    return new Response(JSON.stringify({ 
+
+    return new Response(JSON.stringify({
       error: error.message,
       details: 'Check server logs for more information',
       recommendations: {
@@ -134,9 +134,9 @@ export async function action({ request }) {
         wedges: [],
         putter: []
       }
-    }), { 
+    }), {
       headers,
-      status: 500 
+      status: 500
     });
   }
 }
@@ -144,43 +144,43 @@ export async function action({ request }) {
 function findBestMatches(products, categoryTag, profile, limit = 12) {
   console.log(`\n🔍 Finding matches for ${categoryTag}...`);
   console.log(`  Starting with ${products.filter(p => p.tags.includes(categoryTag)).length} products in this category`);
-  
+
   // ========================================================================
   // FILTERING PHASE - These filters ELIMINATE clubs entirely before scoring
   // Wrong gender, handedness, shafts, or headcovers = NEVER shown
   // ========================================================================
-  
+
   const filtered = products.filter(p => {
     const hasCategory = p.tags.includes(categoryTag);
     const inStock = p.inventory > 0;
-    
+
     const titleLower = p.title.toLowerCase();
     const productTypeLower = p.productType?.toLowerCase() || '';
-    
+
     // CRITICAL: Exclude clubs over allocated budget - HARD LIMIT
     if (p.price > profile.budget) {
       console.log(`  💰 Excluded over budget: ${p.title} ($${p.price} > $${profile.budget} allocated)`);
       return false;
     }
-    
+
     // Only exclude if productType is explicitly "Shaft" or "Shafts"
     const isStandaloneShaft = (productTypeLower === 'shaft' || productTypeLower === 'shafts');
-    
+
     if (isStandaloneShaft) {
       console.log(`  ❌ Excluded shaft: ${p.title}`);
       return false;
     }
-    
+
     // CRITICAL: Exclude headcovers
     const isHeadcover = productTypeLower.includes('headcover') ||
                        productTypeLower.includes('head cover') ||
                        titleLower.includes('headcover') ||
                        titleLower.includes('head cover');
-    
+
     if (isHeadcover) {
       return false;
     }
-    
+
     // SPECIAL FILTER: For Wedges category, ONLY show Sand Wedges
     if (categoryTag === 'Wedges') {
       const isSandWedge = p.tags.includes('Sand Wedges');
@@ -188,20 +188,20 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
         return false; // Not a sand wedge, ELIMINATED
       }
     }
-    
+
     // HARD FILTER #1: HANDEDNESS
     let handednessMatch = true;
-    
+
     if (profile.handedness === 'left') {
       // For left-handed users, ONLY show clubs explicitly tagged as left-handed
-      handednessMatch = p.tags.some(tag => 
-        tag.toLowerCase().includes('left') || 
+      handednessMatch = p.tags.some(tag =>
+        tag.toLowerCase().includes('left') ||
         tag.toLowerCase().includes('lefty') ||
         tag === 'handedness_left'
       );
     } else {
       // For right-handed users (default), ONLY exclude if explicitly left-handed
-      const isExplicitlyLeftHanded = p.tags.some(tag => 
+      const isExplicitlyLeftHanded = p.tags.some(tag =>
         tag.toLowerCase().includes('left hand') ||
         tag.toLowerCase().includes('left-hand') ||
         tag.toLowerCase().includes('lefty') ||
@@ -209,34 +209,34 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
       );
       handednessMatch = !isExplicitlyLeftHanded;
     }
-    
+
     if (!handednessMatch) {
       return false;
     }
-    
+
     // HARD FILTER #2: GENDER - Wrong gender = ELIMINATED
     let genderMatch = true;
     const tagsLower = p.tags.map(t => t.toLowerCase());
-    
+
     // Check if product is women's/ladies
-    const isWomens = tagsLower.some(tag => 
-      tag.includes('women') || 
-      tag.includes('ladies') || 
+    const isWomens = tagsLower.some(tag =>
+      tag.includes('women') ||
+      tag.includes('ladies') ||
       tag.includes('female') ||
       tag.includes('lady')
-    ) || titleLower.includes('women') || 
-        titleLower.includes('ladies') || 
+    ) || titleLower.includes('women') ||
+        titleLower.includes('ladies') ||
         titleLower.includes('lady') ||
         titleLower.includes("women's flex") ||
         titleLower.includes("ladies flex");
-    
+
     // Check if product is men's
-    const isMens = tagsLower.some(tag => 
-      tag.includes('men') || 
+    const isMens = tagsLower.some(tag =>
+      tag.includes('men') ||
       tag.includes('male') ||
       tag === 'gender_male'
     ) || titleLower.includes("men's");
-    
+
     if (profile.gender === 'male') {
       // NEVER show women's clubs to men - ELIMINATED
       genderMatch = !isWomens;
@@ -247,22 +247,22 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
       // For unisex preference, exclude explicitly gendered clubs
       genderMatch = !isWomens && !isMens;
     }
-    
+
     // Additional flex-based gender filtering for edge cases
     // Skip flex filtering for wedges UNLESS it's women's flex
     if (categoryTag !== 'Wedges' && (profile.flex === 'stiff' || profile.flex === 'extra-stiff')) {
       // Stiff/X-Stiff flex users should NEVER see ladies flex - ELIMINATED
-      const hasLadiesFlex = titleLower.includes("women's flex") || 
+      const hasLadiesFlex = titleLower.includes("women's flex") ||
                            titleLower.includes("ladies flex") ||
                            tagsLower.some(tag => tag.includes("ladies flex"));
       if (hasLadiesFlex) {
         genderMatch = false;
       }
     }
-    
+
     // For wedges, ONLY filter out ladies flex if gender is male (not based on flex preference)
     if (categoryTag === 'Wedges' && profile.gender === 'male') {
-      const hasLadiesFlex = titleLower.includes("women's flex") || 
+      const hasLadiesFlex = titleLower.includes("women's flex") ||
                            titleLower.includes("ladies flex") ||
                            titleLower.includes("women") ||
                            titleLower.includes("ladies") ||
@@ -271,12 +271,12 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
         genderMatch = false;
       }
     }
-    
+
     // If gender doesn't match, this club is ELIMINATED
     if (!genderMatch) {
       return false;
     }
-    
+
     // Only clubs that pass ALL filters reach this point
     return hasCategory && inStock;
   });
@@ -290,7 +290,7 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
   // SCORING PHASE - Only clubs that passed ALL filters are scored here
   // At this point, all clubs have correct gender AND handedness
   // ========================================================================
-  
+
   const scored = filtered.map(club => {
     const score = scoreClub(club, profile, categoryTag);
     return {
@@ -300,12 +300,14 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
     };
   });
 
-  // Sort by score DESC, then by price ASC (cheaper is better if scores are equal)
+  // Sort by score DESC, then by price DESC (most expensive that still fits
+  // budget wins ties - we want to spend the shopper's allocated budget, not
+  // race to the bottom)
   const sorted = scored.sort((a, b) => {
     if (b.score !== a.score) {
       return b.score - a.score;
     }
-    return a.price - b.price;
+    return b.price - a.price;
   });
 
   return sorted.slice(0, limit);
@@ -314,11 +316,11 @@ function findBestMatches(products, categoryTag, profile, limit = 12) {
 function scoreClub(club, profile, categoryTag) {
   let score = 0;
   const handicapValue = parseHandicap(profile.handicap);
-  
+
   // PRIORITY #1: FLEX MATCHING (50 points max)
   // Skip flex scoring for wedges unless it's a women's wedge scenario
   const shouldScoreFlex = categoryTag !== 'Wedges' || profile.gender === 'female';
-  
+
   if (shouldScoreFlex) {
     if (profile.flex) {
       const requestedFlexTags = getFlexTagsFromPreference(profile.flex);
@@ -336,7 +338,7 @@ function scoreClub(club, profile, categoryTag) {
           return tagLower === flexTagLower;
         });
       });
-      
+
       if (hasMatchingFlex) {
         score += 50; // Perfect flex match
       } else {
@@ -355,7 +357,7 @@ function scoreClub(club, profile, categoryTag) {
           return tagLower === flexTagLower;
         });
       });
-      
+
       if (hasIdealFlex) {
         score += 50; // Ideal flex for swing speed
       } else {
@@ -366,7 +368,7 @@ function scoreClub(club, profile, categoryTag) {
     // For wedges (non-women's), give neutral flex score since flex doesn't matter
     score += 25; // Neutral score - don't penalize wedges for not having flex options
   }
-  
+
   // PRIORITY #2: SKILL LEVEL (40 points max)
   // Skip skill level scoring for wedges - forgiveness doesn't matter for wedges
   if (categoryTag !== 'Wedges') {
@@ -378,15 +380,15 @@ function scoreClub(club, profile, categoryTag) {
     } else {
       idealSkillTag = 'Forgiveness';
     }
-    
-    const hasIdealSkill = club.tags.some(tag => 
+
+    const hasIdealSkill = club.tags.some(tag =>
       tag.toLowerCase().includes(idealSkillTag.toLowerCase())
     );
-    
+
     if (hasIdealSkill) {
       score += 40; // Perfect skill match
     } else {
-      const hasAnySkill = club.tags.some(tag => 
+      const hasAnySkill = club.tags.some(tag =>
         tag.toLowerCase().includes('forgiveness') ||
         tag.toLowerCase().includes('precision') ||
         tag.toLowerCase().includes('control')
@@ -401,28 +403,19 @@ function scoreClub(club, profile, categoryTag) {
     // For wedges, give neutral skill score - forgiveness doesn't apply
     score += 20;
   }
-  
+
   // PRIORITY #3: PRICE FIT (30 points max, 40 for wedges)
+  // Continuous scale instead of fixed buckets - rewards spending closer to
+  // the allocated budget rather than lumping everything under ~30% of
+  // budget into one identical score. All clubs here already passed the
+  // budget hard-filter, so priceRatio is naturally capped at 1.
   const pricePoints = categoryTag === 'Wedges' ? 40 : 30;
-  
-  // All clubs passed the budget filter, so they're all within budget
-  const priceRatio = club.price / profile.budget;
-  
-  if (priceRatio >= 0.85) {
-    score += pricePoints; // Premium option - 85-100% of budget gets max points
-  } else if (priceRatio >= 0.70) {
-    score += Math.floor(pricePoints * 0.85); // Good option - 70-85% of budget
-  } else if (priceRatio >= 0.50) {
-    score += Math.floor(pricePoints * 0.70); // Mid-range option - 50-70% of budget
-  } else if (priceRatio >= 0.30) {
-    score += Math.floor(pricePoints * 0.50); // Budget option - 30-50% of budget
-  } else {
-    score += Math.floor(pricePoints * 0.25); // Very cheap - under 30% of budget
-  }
-  
+  const priceRatio = Math.min(club.price / profile.budget, 1);
+  score += Math.round(pricePoints * priceRatio);
+
   // PRIORITY #4: BRAND PREFERENCE (15 points, 25 for wedges)
   const brandPoints = categoryTag === 'Wedges' ? 25 : 15;
-  
+
   if (profile.brandPreferences && profile.brandPreferences.length > 0) {
     if (profile.brandPreferences.includes(club.brand)) {
       score += brandPoints;
@@ -436,19 +429,19 @@ function scoreClub(club, profile, categoryTag) {
       }
     }
   }
-  
+
   // PRIORITY #5: GENDER (already filtered, small bonus - 5 points)
   const titleLower = club.title.toLowerCase();
   const tagsLower = club.tags.map(t => t.toLowerCase());
-  
-  const isWomens = tagsLower.some(tag => 
+
+  const isWomens = tagsLower.some(tag =>
     tag.includes('women') || tag.includes('ladies')
   ) || titleLower.includes('women') || titleLower.includes('ladies');
-  
-  const isMens = tagsLower.some(tag => 
+
+  const isMens = tagsLower.some(tag =>
     tag.includes('men') || tag.includes('male')
   ) || titleLower.includes("men's");
-  
+
   if (profile.gender === 'male' && isMens) {
     score += 5;
   } else if (profile.gender === 'female' && isWomens) {
@@ -456,8 +449,28 @@ function scoreClub(club, profile, categoryTag) {
   } else if (profile.gender === 'unisex' && !isWomens && !isMens) {
     score += 5;
   }
-  
+
+  // PRIORITY #6: CONDITION PENALTY
+  // Damaged/blemished clubs (e.g. "*Dented*") were previously able to rank
+  // at or near the top whenever they matched flex/skill tags, since nothing
+  // in this function accounted for condition. Apply a heavy penalty instead
+  // of an outright exclusion so they can still surface further down the
+  // list (or via "Show More") rather than disappearing entirely.
+  score += getConditionPenalty(club);
+
   return score;
+}
+
+function getConditionPenalty(club) {
+  const titleLower = club.title.toLowerCase();
+  const tagsLower = club.tags.map(t => t.toLowerCase());
+
+  const damagedSignals = ['*dented*', 'dented', 'damaged', 'blemished', 'as-is', 'as is'];
+
+  const isDamaged = damagedSignals.some(sig => titleLower.includes(sig)) ||
+                     tagsLower.some(tag => damagedSignals.some(sig => tag.includes(sig)));
+
+  return isDamaged ? -50 : 0;
 }
 
 function parseHandicap(handicap) {
@@ -491,28 +504,28 @@ function getFlexTagsFromPreference(flexPreference) {
 function generateMatchReason(club, profile, score, categoryTag) {
   const reasons = [];
   const handicapValue = parseHandicap(profile.handicap);
-  
+
   // Prioritize flex matching in reasons (but skip for wedges unless women's)
   const shouldMentionFlex = categoryTag !== 'Wedges' || profile.gender === 'female';
-  
+
   if (shouldMentionFlex) {
     if (profile.flex) {
       const requestedFlexTags = getFlexTagsFromPreference(profile.flex);
-      if (club.tags.some(tag => 
+      if (club.tags.some(tag =>
         requestedFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
       )) {
         reasons.push("Perfect flex match");
       }
     } else if (profile.swingSpeed) {
       const idealFlexTags = getIdealFlexTags(profile.swingSpeed);
-      if (club.tags.some(tag => 
+      if (club.tags.some(tag =>
         idealFlexTags.some(flexTag => tag.toLowerCase().includes(flexTag.toLowerCase()))
       )) {
         reasons.push("Ideal flex for your speed");
       }
     }
   }
-  
+
   // Then skill level (skip for wedges)
   if (categoryTag !== 'Wedges') {
     if (handicapValue <= 10 && club.tags.some(tag => tag.toLowerCase().includes('precision'))) {
@@ -523,14 +536,14 @@ function generateMatchReason(club, profile, score, categoryTag) {
       reasons.push("Maximum forgiveness");
     }
   }
-  
+
   // Price - all clubs are within allocated budget now
   if (club.price <= profile.budget * 0.85) {
     reasons.push("Excellent value");
   } else {
     reasons.push("Within budget");
   }
-  
+
   // Brand
   if (profile.brandPreferences?.includes(club.brand)) {
     reasons.push("Your preferred brand");
@@ -541,7 +554,17 @@ function generateMatchReason(club, profile, score, categoryTag) {
       reasons.push("Premium brand");
     }
   }
-  
+
+  // Flag condition issues explicitly in the shown reason
+  const titleLower = club.title.toLowerCase();
+  const tagsLower = club.tags.map(t => t.toLowerCase());
+  const damagedSignals = ['*dented*', 'dented', 'damaged', 'blemished', 'as-is', 'as is'];
+  const isDamaged = damagedSignals.some(sig => titleLower.includes(sig)) ||
+                     tagsLower.some(tag => damagedSignals.some(sig => tag.includes(sig)));
+  if (isDamaged) {
+    reasons.push("Discounted for cosmetic wear");
+  }
+
   if (reasons.length === 0) {
     if (score >= 40) {
       reasons.push("Good option for your game");
@@ -549,6 +572,6 @@ function generateMatchReason(club, profile, score, categoryTag) {
       reasons.push("Available option");
     }
   }
-  
+
   return reasons.join(" • ");
 }
